@@ -23,7 +23,7 @@ load_dotenv('config.env', override=True)
 
 UPSTREAM_REPO = environ.get('UPSTREAM_REPO', '')
 if len(UPSTREAM_REPO) == 0:
-    UPSTREAM_REPO = "https://github.com/JohnyWalker167/fantastic-sniffle"
+    UPSTREAM_REPO = "https://github.com/JohnyWalker167/friendly-parakeet"
 
 UPSTREAM_BRANCH = environ.get('UPSTREAM_BRANCH', '')
 if len(UPSTREAM_BRANCH) == 0:
