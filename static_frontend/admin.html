@@ -1,0 +1,1151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        /* —————————— Base Layout —————————— */
+        body {
+            font-family: "Inter", sans-serif;
+            background-color: #121212;
+            color: #f2f2f2;
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 15px;
+        }
+
+        h1,
+        h2 {
+            color: #e50914;
+            font-weight: 700;
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        /* —————————— Lists —————————— */
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+
+        li {
+            background-color: #1f1f1f;
+            margin: 8px 0;
+            padding: 12px;
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            word-break: break-all;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        /* —————————— Buttons —————————— */
+        button {
+            background-color: #e50914 !important;
+            color: #fff;
+            border: none;
+            border-radius: 20px;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            margin-top: 6px;
+        }
+
+        button:hover {
+            background-color: #b20710 !important;
+            transform: translateY(-1px);
+        }
+
+        button:disabled {
+            background-color: #444;
+            cursor: not-allowed;
+        }
+
+        /* —————————— Inputs & Selects —————————— */
+        input,
+        select,
+        textarea {
+            width: 100%;
+            background-color: #1f1f1f;
+            color: #fff;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 8px;
+            margin-bottom: 10px;
+        }
+
+        input::placeholder {
+            color: #bbb;
+        }
+
+        /* —————————— Loader —————————— */
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #e50914;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        .loader-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            width: 100%;
+        }
+
+        .btn-loader {
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top: 2px solid #fff;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* —————————— Modal —————————— */
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(2px);
+            z-index: 999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow-y: auto;
+        }
+
+        .modal-content {
+            background: #1f1f1f;
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            max-width: 800px;
+            width: 90%;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+            display: flex;
+            flex-direction: column;
+            max-height: 90vh;
+        }
+
+        .modal h2 {
+            color: #e50914;
+            text-align: center;
+        }
+
+        /* —————————— Responsive Adjustments —————————— */
+        @media (max-width: 480px) {
+            .container {
+                padding: 10px;
+            }
+
+            button {
+                width: 100%;
+                margin-top: 8px;
+            }
+
+            li {
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-3">
+        <!-- Notification element -->
+        <div id="notification" style="display:none; position:fixed; top:20px; right:20px; padding:15px; border-radius:10px; color:white; font-weight:bold;"></div>
+        
+        <!-- Main title and loader -->
+        <h1>TMDB Management</h1>
+
+        <!-- TMDB entries section -->
+        <h2>TMDB Entries</h2>
+        <div class="d-flex justify-content-between">
+            <input type="search" id="tmdb-search" placeholder="Search by title" class="w-100">
+            <select id="tmdb-type-filter" class="ms-2">
+                <option value="">All</option>
+                <option value="movie">Movie</option>
+                <option value="tv">Series</option>
+            </select>
+        </div>
+        <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" id="tmdb-no-poster-url-filter">
+            <label class="form-check-label" for="tmdb-no-poster-url-filter">
+                Only entries with no Poster URL
+            </label>
+        </div>
+        <ul id="tmdb-list"></ul>
+        <div class="d-flex justify-content-between">
+            <button id="tmdb-prev">Previous</button>
+            <button id="tmdb-next">Next</button>
+        </div>
+
+        <!-- Add TMDB entry section -->
+        <h2>Add TMDB Entry</h2>
+        <input type="number" id="tmdb-id" placeholder="TMDB ID">
+        <select id="tmdb-type">
+            <option value="movie">Movie</option>
+            <option value="tv">Series</option>
+        </select>
+        <div id="season-selection" style="display: none;">
+            <select id="season-select"></select>
+        </div>
+        <button id="add-tmdb-btn" onclick="addTmdbEntry()">Add</button>
+        
+        <!-- Send all with restart section -->
+        <h2>Send All with Restart</h2>
+        <input type="number" id="restart-tmdb-id" placeholder="Restart TMDB ID (Optional)">
+        <select id="restart-tmdb-type">
+            <option value="movie">Movie</option>
+            <option value="tv">Series</option>
+        </select>
+        <button id="send-all-btn" onclick="sendAllToChannel()">Send All</button>
+
+        <!-- Files section -->
+        <h2>Files</h2>
+        <input type="search" id="file-search" placeholder="Search by filename">
+        <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" id="no-tmdb-id-filter">
+            <label class="form-check-label" for="no-tmdb-id-filter">
+                Only files with no TMDB ID
+            </label>
+        </div>
+        <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" id="no-poster-url-filter">
+            <label class="form-check-label" for="no-poster-url-filter">
+                Only files with no Poster URL
+            </label>
+        </div>
+        <select id="channel-filter" class="form-select mt-2">
+            <option value="">Select Category</option>
+        </select>
+        <ul id="files-list"></ul>
+        <div class="d-flex justify-content-between">
+            <button id="files-prev">Previous</button>
+            <button id="files-next">Next</button>
+        </div>
+
+        <!-- Comments Section -->
+        <h2>Comments</h2>
+        <div class="form-check mt-2 mb-3">
+            <input class="form-check-input" type="checkbox" id="show-comments-checkbox">
+            <label class="form-check-label" for="show-comments-checkbox">
+                Show Comments
+            </label>
+        </div>
+        <ul id="comments-list"></ul>
+        <div class="d-flex justify-content-between">
+            <button id="comments-prev">Previous</button>
+            <button id="comments-next">Next</button>
+        </div>
+
+        <!-- Edit TMDB entry modal -->
+        <div id="edit-modal" class="modal" style="display:none;">
+            <div class="modal-content">
+                <h2>Edit TMDB Entry</h2>
+                <input type="hidden" id="edit-tmdb-id">
+                <input type="hidden" id="edit-tmdb-type">
+                <label for="edit-title">Title:</label>
+                <input type="text" id="edit-title">
+                <label for="edit-rating">Rating:</label>
+                <input type="text" id="edit-rating">
+                <label for="edit-plot">Plot:</label>
+                <textarea id="edit-plot"></textarea>
+                <label for="edit-year">Year:</label>
+                <input type="text" id="edit-year">
+                <label for="edit-poster-path">Poster Path:</label>
+                <input type="text" id="edit-poster-path">
+                
+                <div id="edit-seasons-container" style="display:none;">
+                    <h3 class="mt-3">Seasons</h3>
+                    <div id="seasons-list"></div>
+                    <button type="button" onclick="addSeasonField()" class="btn btn-sm btn-secondary mt-2">Add Season</button>
+                </div>
+
+                <div class="d-flex justify-content-between mt-3">
+                    <button id="update-tmdb-btn" onclick="updateTmdbEntry()">Save</button>
+                    <button onclick="closeModal()" style="background-color:#555;">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit poster URL modal -->
+        <div id="edit-poster-modal" class="modal" style="display:none;">
+            <div class="modal-content">
+                <h2>Edit Poster URL</h2>
+                <input type="hidden" id="edit-file-id">
+                <label for="edit-poster-url">Poster URL:</label>
+                <input type="search" id="edit-poster-url">
+                <div class="d-flex justify-content-between mt-3">
+                    <button id="update-poster-btn" onclick="updateFilePoster()">Save</button>
+                    <button onclick="closePosterModal()" style="background-color:#555;">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Comment Modal -->
+        <div id="edit-comment-modal" class="modal" style="display:none;">
+            <div class="modal-content">
+                <h2>Edit Comment</h2>
+                <input type="hidden" id="edit-comment-id">
+                <label for="edit-comment-text">Comment:</label>
+                <textarea id="edit-comment-text" rows="4"></textarea>
+                <div class="d-flex justify-content-between mt-3">
+                    <button id="update-comment-btn" onclick="updateComment()">Save</button>
+                    <button onclick="closeCommentModal()" style="background-color:#555;">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script>
+        // —————————————— State Management ——————————————
+        let token = localStorage.getItem('authToken');
+        let tmdbCurrentPage = 1;
+        let filesCurrentPage = 1;
+        let commentsCurrentPage = 1;
+        let tmdbSearchQuery = '';
+        let tmdbTypeFilter = '';
+        let tmdbNoPosterUrlFilter = false;
+        let fileSearchQuery = '';
+        let noTmdbIdFilter = false;
+        let noPosterUrlFilter = false;
+        let channelFilter = '';
+        const selectedFileIds = new Set();
+        let currentTmdbSelection = null;
+
+        // —————————————— Utility Functions ——————————————
+        /**
+         * Debounces a function to prevent it from being called too frequently.
+         * @param {Function} func The function to debounce.
+         * @param {number} delay The delay in milliseconds.
+         * @returns {Function} The debounced function.
+         */
+        function debounce(func, delay) {
+            let timeout;
+            return function(...args) {
+                const context = this;
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(context, args), delay);
+            };
+        }
+        
+        /**
+         * Shows a notification message.
+         * @param {string} message The message to display.
+         * @param {boolean} isError Whether the message is an error.
+         */
+        function showNotification(message, isError = false) {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.style.backgroundColor = isError ? '#e50914' : '#4CAF50';
+            notification.style.display = 'block';
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 3000);
+        }
+
+        // —————————————— API Functions ——————————————
+        /**
+         * Fetches data from the API with authorization headers.
+         * @param {string} url The URL to fetch.
+         * @param {object} options The fetch options.
+         * @returns {Promise<Response>} The fetch response.
+         */
+        async function fetchWithAuth(url, options = {}) {
+            try {
+                const response = await fetch(url, {
+                    ...options,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(options.headers || {}),
+                        'Authorization': `Bearer ${token}`,
+                    },
+                });
+
+                if (response.status === 401) {
+                    localStorage.removeItem('authToken');
+                    window.location.href = 'login.html';
+                    return;
+                }
+
+                return response;
+            } catch (err) {
+                console.error('Request failed:', err);
+                throw err;
+            }
+        }
+        
+        /**
+         * Verifies the user's authorization status with the server.
+         * @returns {Promise<boolean>} True if authorized, false otherwise.
+         */
+        async function verifyAuth() {
+            if (!token) {
+                window.location.href = 'login.html';
+                return false;
+            }
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/user/verify`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (response.status === 401) {
+                    localStorage.removeItem('authToken');
+                    window.location.href = 'login.html';
+                    return false;
+                }
+                return response.ok;
+            } catch (error) {
+                console.error('Auth verification failed:', error);
+                return false;
+            }
+        }
+
+        // —————————————— TMDB Functions ——————————————
+        /**
+         * Loads the TMDB entries from the API.
+         */
+        async function loadTmdbEntries() {
+            const list = document.getElementById('tmdb-list');
+            if (!tmdbSearchQuery && !tmdbTypeFilter && !tmdbNoPosterUrlFilter) {
+                list.innerHTML = '';
+                document.getElementById('tmdb-prev').disabled = true;
+                document.getElementById('tmdb-next').disabled = true;
+                return;
+            }
+            list.innerHTML = '<div class="loader-wrapper"><div class="loader"></div></div>';
+            const response = await fetchWithAuth(`${API_BASE_URL}/api/admin/tmdb?page=${tmdbCurrentPage}&search=${tmdbSearchQuery}&tmdb_type=${tmdbTypeFilter}&no_poster_url=${tmdbNoPosterUrlFilter}`);
+            if (!response || !response.ok) return;
+            const data = await response.json();
+            list.innerHTML = '';
+            data.entries.forEach(entry => {
+                const item = document.createElement('li');
+                item.textContent = `${entry.title} (${entry.type}) - ${entry.tmdb_id}`;
+                item.style.cursor = 'pointer';
+                item.onclick = () => {
+                    document.getElementById('tmdb-id').value = entry.tmdb_id;
+                    document.getElementById('tmdb-type').value = entry.type;
+                };
+
+                const sendButton = document.createElement('button');
+                sendButton.textContent = 'Send to Channel';
+                sendButton.onclick = async (e) => {
+                    e.stopPropagation();
+                    const originalText = sendButton.textContent;
+                    sendButton.disabled = true;
+                    sendButton.innerHTML = '<div class="btn-loader"></div>';
+                    try {
+                        await sendToChannel(entry.tmdb_id, entry.type);
+                    } finally {
+                        sendButton.disabled = false;
+                        sendButton.textContent = originalText;
+                    }
+                };
+                item.appendChild(sendButton);
+
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = 'Delete';
+                deleteButton.onclick = async (e) => {
+                    e.stopPropagation();
+                    const originalText = deleteButton.textContent;
+                    deleteButton.disabled = true;
+                    deleteButton.innerHTML = '<div class="btn-loader"></div>';
+                    try {
+                        await deleteTmdbEntry(entry.tmdb_id, entry.type);
+                    } finally {
+                        deleteButton.disabled = false;
+                        deleteButton.textContent = originalText;
+                    }
+                };
+                item.appendChild(deleteButton);
+
+                const editButton = document.createElement('button');
+                editButton.textContent = 'Edit';
+                editButton.onclick = (e) => {
+                    e.stopPropagation();
+                    openModal(entry);
+                };
+                item.appendChild(editButton);
+
+                list.appendChild(item);
+            });
+            document.getElementById('tmdb-prev').disabled = data.current_page === 1;
+            document.getElementById('tmdb-next').disabled = data.current_page === data.total_pages;
+        }
+
+        /**
+         * Adds a new TMDB entry.
+         */
+        async function addTmdbEntry() {
+            const btn = document.getElementById('add-tmdb-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.innerHTML = '<div class="btn-loader"></div>';
+
+            const tmdbId = document.getElementById('tmdb-id').value;
+            const tmdbType = document.getElementById('tmdb-type').value;
+            const selectedFiles = Array.from(selectedFileIds);
+            const seasonNumber = document.getElementById('season-select').value;
+
+            const body = {
+                tmdb_id: tmdbId,
+                tmdb_type: tmdbType,
+                file_ids: selectedFiles,
+            };
+
+            if (tmdbType === 'tv') {
+                body.season_number = seasonNumber;
+            }
+
+            try {
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/admin/tmdb`, {
+                    method: 'POST',
+                    body: JSON.stringify(body)
+                });
+
+                if (response && response.ok) {
+                    showNotification('TMDB entry added successfully!');
+                    document.getElementById('tmdb-id').value = '';
+                    selectedFileIds.clear();
+                    loadTmdbEntries();
+                    loadFiles();
+                } else {
+                    showNotification('Failed to add TMDB entry.', true);
+                }
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+
+        /**
+         * Deletes a TMDB entry.
+         * @param {string} tmdbId The ID of the TMDB entry.
+         * @param {string} tmdbType The type of the TMDB entry.
+         */
+        async function deleteTmdbEntry(tmdbId, tmdbType) {
+            if (!confirm('Are you sure you want to delete this TMDB entry?')) {
+                return;
+            }
+            const response = await fetchWithAuth(`${API_BASE_URL}/api/admin/tmdb/${tmdbId}/${tmdbType}`, { method: 'DELETE' });
+            if (response && response.ok) {
+                showNotification('TMDB entry deleted successfully!');
+                loadTmdbEntries();
+                loadFiles();
+            } else {
+                showNotification('Failed to delete TMDB entry.', true);
+            }
+        }
+        
+        /**
+         * Sends a TMDB entry to the channel.
+         * @param {string} tmdbId The ID of the TMDB entry.
+         * @param {string} tmdbType The type of the TMDB entry.
+         */
+        async function sendToChannel(tmdbId, tmdbType) {
+            const response = await fetchWithAuth(`${API_BASE_URL}/api/admin/tmdb/send`, {
+                method: 'POST',
+                body: JSON.stringify({ tmdb_id: tmdbId, tmdb_type: tmdbType })
+            });
+
+            if (response && response.ok) {
+                showNotification('Successfully sent to channel!');
+            } else {
+                showNotification('Failed to send to channel.', true);
+            }
+        }
+        
+        /**
+         * Sends all TMDB entries to the channel.
+         */
+        async function sendAllToChannel() {
+            if (confirm('Are you sure you want to send all TMDB entries to the channel? This could take a while.')) {
+                const btn = document.getElementById('send-all-btn');
+                const originalText = btn.textContent;
+                btn.disabled = true;
+                btn.innerHTML = '<div class="btn-loader"></div>';
+
+                const restartTmdbId = document.getElementById('restart-tmdb-id').value;
+                const restartTmdbType = document.getElementById('restart-tmdb-type').value;
+
+                let body = {};
+                if (restartTmdbId && restartTmdbId.trim() !== '') {
+                    body = {
+                        restart_tmdb_id: parseInt(restartTmdbId),
+                        restart_tmdb_type: restartTmdbType
+                    };
+                }
+
+                try {
+                    const response = await fetchWithAuth(`${API_BASE_URL}/api/admin/tmdb/send-all`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(body)
+                    });
+
+                    if (response && response.ok) {
+                        showNotification('Started sending all entries to the channel. This may take some time.');
+                    } else {
+                        showNotification('Failed to start sending all entries.', true);
+                    }
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                }
+            }
+        }
+        
+        // —————————————— File Functions ——————————————
+        /**
+         * Loads the files from the API.
+         */
+        async function loadFiles() {
+            const list = document.getElementById('files-list');
+            if (!fileSearchQuery && !noTmdbIdFilter && !noPosterUrlFilter && !channelFilter) {
+                list.innerHTML = '';
+                document.getElementById('files-prev').disabled = true;
+                document.getElementById('files-next').disabled = true;
+                return;
+            }
+            list.innerHTML = '<div class="loader-wrapper"><div class="loader"></div></div>';
+            const response = await fetchWithAuth(
+                `${API_BASE_URL}/api/admin/files?page=${filesCurrentPage}&search=${fileSearchQuery}` +
+                `&no_tmdb_id=${noTmdbIdFilter}&no_poster_url=${noPosterUrlFilter}&channel_id=${channelFilter}`
+            );
+            if (!response || !response.ok) return;
+            const data = await response.json();
+            list.innerHTML = '';
+            data.files.forEach(file => {
+                const item = document.createElement('li');
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.dataset.fileId = file.id;
+                checkbox.checked = selectedFileIds.has(file.id);
+                checkbox.onchange = () => {
+                    if (checkbox.checked) {
+                        selectedFileIds.add(file.id);
+                    } else {
+                        selectedFileIds.delete(file.id);
+                    }
+                };
+                item.appendChild(checkbox);
+                item.append(` ${file.file_name} (${file.tmdb_id || 'No TMDB ID'})`);
+                
+                const editPosterButton = document.createElement('button');
+                editPosterButton.textContent = 'Edit Poster';
+                editPosterButton.onclick = () => openPosterModal(file);
+                item.appendChild(editPosterButton);
+
+                if (file.poster_delete_url) {
+                    const delPosterBtn = document.createElement('button');
+                    delPosterBtn.textContent = 'Del Poster';
+                    delPosterBtn.onclick = () => window.open(file.poster_delete_url, '_blank');
+                    item.appendChild(delPosterBtn);
+                }
+
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = 'Delete';
+                deleteButton.onclick = async () => {
+                    const originalText = deleteButton.textContent;
+                    deleteButton.disabled = true;
+                    deleteButton.innerHTML = '<div class="btn-loader"></div>';
+                    try {
+                        await deleteFile(file.id);
+                    } finally {
+                        deleteButton.disabled = false;
+                        deleteButton.textContent = originalText;
+                    }
+                };
+                item.appendChild(deleteButton);
+
+                list.appendChild(item);
+            });
+            document.getElementById('files-prev').disabled = data.current_page === 1;
+            document.getElementById('files-next').disabled = data.current_page === data.total_pages;
+        }
+        
+        /**
+         * Deletes a file.
+         * @param {string} fileId The ID of the file to delete.
+         */
+        async function deleteFile(fileId) {
+            if (!confirm('Are you sure you want to delete this file?')) {
+                return;
+            }
+            try {
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/admin/files/${fileId}`, {
+                    method: 'DELETE'
+                });
+                if (response && response.ok) {
+                    showNotification('File deleted successfully!');
+                    loadFiles(fileSearchQuery);
+                } else {
+                    showNotification('Failed to delete file.', true);
+                }
+            } catch (error) {
+                console.error('Error deleting file:', error);
+                showNotification('An unexpected error occurred while deleting the file.', true);
+            }
+        }
+        
+        // —————————————— Modal Functions ——————————————
+        /**
+         * Opens the edit TMDB entry modal.
+         * @param {object} entry The TMDB entry to edit.
+         */
+        async function openModal(entry) {
+            document.getElementById('edit-modal').style.display = 'flex';
+            document.getElementById('edit-tmdb-id').value = entry.tmdb_id;
+            document.getElementById('edit-tmdb-type').value = entry.type;
+            document.getElementById('edit-title').value = entry.title;
+            document.getElementById('edit-rating').value = entry.rating;
+            document.getElementById('edit-plot').value = entry.plot;
+            document.getElementById('edit-year').value = entry.year;
+            document.getElementById('edit-poster-path').value = entry.poster_path;
+
+            const seasonsContainer = document.getElementById('edit-seasons-container');
+            const seasonsList = document.getElementById('seasons-list');
+            seasonsList.innerHTML = '';
+
+            if (entry.type === 'tv') {
+                seasonsContainer.style.display = 'block';
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/admin/tmdb/${entry.tmdb_id}/${entry.type}`);
+                if (response && response.ok) {
+                    const data = await response.json();
+                    data.seasons.forEach(season => addSeasonField(season));
+                }
+            } else {
+                seasonsContainer.style.display = 'none';
+            }
+        }
+
+        /**
+         * Adds a season field to the edit modal.
+         * @param {object} season The season data.
+         */
+        function addSeasonField(season = { season_number: '', episode_count: '', poster_path: '' }) {
+            const seasonsList = document.getElementById('seasons-list');
+            const seasonDiv = document.createElement('div');
+            seasonDiv.className = 'season-edit-item border p-2 mb-2 rounded';
+            seasonDiv.innerHTML = `
+                <div class="row g-2">
+                    <div class="col-md-2">
+                        <label class="small">No.</label>
+                        <input type="number" class="season-number form-control form-control-sm" value="${season.season_number}" placeholder="No.">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="small">Episodes</label>
+                        <input type="number" class="season-episodes form-control form-control-sm" value="${season.episode_count}" placeholder="Episodes">
+                    </div>
+                    <div class="col-md-5">
+                        <label class="small">Poster Path</label>
+                        <input type="text" class="season-poster form-control form-control-sm" value="${season.poster_path || ''}" placeholder="Poster Path">
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button type="button" onclick="this.closest('.season-edit-item').remove()" class="btn btn-sm btn-danger w-100">Del</button>
+                    </div>
+                </div>
+            `;
+            seasonsList.appendChild(seasonDiv);
+        }
+
+        /**
+         * Closes the edit TMDB entry modal.
+         */
+        function closeModal() {
+            document.getElementById('edit-modal').style.display = 'none';
+        }
+
+        /**
+         * Updates the TMDB entry.
+         */
+        async function updateTmdbEntry() {
+            const btn = document.getElementById('update-tmdb-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.innerHTML = '<div class="btn-loader"></div>';
+
+            const tmdbId = document.getElementById('edit-tmdb-id').value;
+            const tmdbType = document.getElementById('edit-tmdb-type').value;
+            const data = {
+                title: document.getElementById('edit-title').value,
+                rating: document.getElementById('edit-rating').value,
+                plot: document.getElementById('edit-plot').value,
+                year: document.getElementById('edit-year').value,
+                poster_path: document.getElementById('edit-poster-path').value               
+            };
+
+            if (tmdbType === 'tv') {
+                const seasonItems = document.querySelectorAll('.season-edit-item');
+                const seasons = [];
+                seasonItems.forEach(item => {
+                    const number = item.querySelector('.season-number').value;
+                    const episodes = item.querySelector('.season-episodes').value;
+                    const poster = item.querySelector('.season-poster').value;
+                    if (number) {
+                        seasons.push({
+                            season_number: parseInt(number),
+                            episode_count: parseInt(episodes) || 0,
+                            poster_path: poster || null
+                        });
+                    }
+                });
+                data.seasons = seasons;
+            }
+
+            try {
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/admin/tmdb/${tmdbId}/${tmdbType}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(data)
+                });
+                if (response && response.ok) {
+                    showNotification('TMDB entry updated successfully!');
+                    closeModal();
+                    loadTmdbEntries();
+                } else {
+                    showNotification('Failed to update TMDB entry.', true);
+                }
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+        
+        /**
+         * Opens the edit poster modal.
+         * @param {object} file The file to edit the poster for.
+         */
+        function openPosterModal(file) {
+            document.getElementById('edit-poster-modal').style.display = 'flex';
+            document.getElementById('edit-file-id').value = file.id;
+            document.getElementById('edit-poster-url').value = file.poster_url || '';
+        }
+
+        /**
+         * Closes the edit poster modal.
+         */
+        function closePosterModal() {
+            document.getElementById('edit-poster-modal').style.display = 'none';
+        }
+
+        // —————————————— Comment Functions ——————————————
+        /**
+         * Loads the comments from the API.
+         */
+        async function loadAdminComments() {
+            const list = document.getElementById('comments-list');
+            const showComments = document.getElementById('show-comments-checkbox').checked;
+            if (!showComments) {
+                list.innerHTML = '';
+                document.getElementById('comments-prev').disabled = true;
+                document.getElementById('comments-next').disabled = true;
+                return;
+            }
+            list.innerHTML = '<div class="loader-wrapper"><div class="loader"></div></div>';
+            const response = await fetchWithAuth(`${API_BASE_URL}/api/admin/comments?page=${commentsCurrentPage}`);
+            if (!response || !response.ok) return;
+            const data = await response.json();
+            list.innerHTML = '';
+            data.comments.forEach(comment => {
+                const item = document.createElement('li');
+                item.innerHTML = `
+                    <strong>${comment.user_name}</strong>: ${comment.comment}
+                    <div class="mt-2">
+                        <button class="btn-sm" onclick="openCommentModal('${comment._id}', \`${comment.comment.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)">Edit</button>
+                        <button class="btn-sm delete-comment-btn" style="background-color:#e50914;" onclick="handleDeleteComment('${comment._id}', this)">Delete</button>
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+            document.getElementById('comments-prev').disabled = data.current_page === 1;
+            document.getElementById('comments-next').disabled = data.current_page === data.total_pages;
+        }
+
+        /**
+         * Deletes a comment.
+         * @param {string} commentId The ID of the comment to delete.
+         */
+        async function handleDeleteComment(commentId, btn) {
+            if (!confirm('Are you sure you want to delete this comment?')) {
+                return;
+            }
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.innerHTML = '<div class="btn-loader"></div>';
+            try {
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/admin/comments/${commentId}`, { method: 'DELETE' });
+                if (response && response.ok) {
+                    showNotification('Comment deleted successfully!');
+                    loadAdminComments();
+                } else {
+                    showNotification('Failed to delete comment.', true);
+                }
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+
+        /**
+         * Opens the edit comment modal.
+         * @param {string} id The ID of the comment.
+         * @param {string} text The text of the comment.
+         */
+        function openCommentModal(id, text) {
+            document.getElementById('edit-comment-modal').style.display = 'flex';
+            document.getElementById('edit-comment-id').value = id;
+            document.getElementById('edit-comment-text').value = text;
+        }
+
+        /**
+         * Closes the edit comment modal.
+         */
+        function closeCommentModal() {
+            document.getElementById('edit-comment-modal').style.display = 'none';
+        }
+
+        /**
+         * Updates the comment.
+         */
+        async function updateComment() {
+            const btn = document.getElementById('update-comment-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.innerHTML = '<div class="btn-loader"></div>';
+
+            const id = document.getElementById('edit-comment-id').value;
+            const text = document.getElementById('edit-comment-text').value;
+            try {
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/admin/comments/${id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ comment: text })
+                });
+                if (response && response.ok) {
+                    showNotification('Comment updated successfully!');
+                    closeCommentModal();
+                    loadAdminComments();
+                } else {
+                    showNotification('Failed to update comment.', true);
+                }
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+
+        /**
+         * Updates the file poster.
+         */
+        async function updateFilePoster() {
+            const btn = document.getElementById('update-poster-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.innerHTML = '<div class="btn-loader"></div>';
+
+            const fileId = document.getElementById('edit-file-id').value;
+            const posterUrl = document.getElementById('edit-poster-url').value;
+            try {
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/admin/files/${fileId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ poster_url: posterUrl })
+                });
+
+                if (response && response.ok) {
+                    const data = await response.json();
+                    showNotification('File poster updated successfully!');
+                    closePosterModal();
+                    // Find the specific file item in the list and update its poster URL visually
+                    const fileRow = document.querySelector(`input[data-file-id='${fileId}']`).closest('li');
+                    if (fileRow) {
+                        // Re-fetch or manually update the poster URL in the UI
+                        // For simplicity, we'll just reload the files list
+                        loadFiles(fileSearchQuery);
+                    }
+                } else {
+                    let errorMessage = 'Failed to update file poster.';
+                    try {
+                        const error = await response.json();
+                        errorMessage = error.detail || errorMessage;
+                    } catch (e) {
+                        // Ignore JSON parsing error if the response body is not JSON
+                    }
+                    showNotification(errorMessage, true);
+                }
+            } catch (error) {
+                console.error('Error updating file poster:', error);
+                showNotification('An unexpected network error occurred.', true);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+        
+        // —————————————— Initial Load ——————————————
+        /**
+         * Loads the channels from the API.
+         */
+        async function loadChannels() {
+            const response = await fetchWithAuth(`${API_BASE_URL}/api/admin/channels`);
+            if (!response || !response.ok) return;
+            const channels = await response.json();
+            const select = document.getElementById('channel-filter');
+            channels.forEach(channel => {
+                const option = document.createElement('option');
+                option.value = channel.channel_id;
+                option.textContent = channel.channel_name;
+                select.appendChild(option);
+            });
+        }
+        
+        /**
+         * Loads the seasons for a TV show.
+         * @param {string} tmdbId The ID of the TV show.
+         */
+        async function loadSeasons(tmdbId) {
+            const response = await fetchWithAuth(`${API_BASE_URL}/api/admin/tmdb/${tmdbId}/tv`);
+            if (!response || !response.ok) return;
+            const data = await response.json();
+            const seasonSelect = document.getElementById('season-select');
+            seasonSelect.innerHTML = '';
+            data.seasons.forEach(season => {
+                const option = document.createElement('option');
+                option.value = season.season_number;
+                option.textContent = `Season ${season.season_number}`;
+                seasonSelect.appendChild(option);
+            });
+        }
+        
+        // —————————————— Event Listeners ——————————————
+        const debouncedLoadFiles = debounce(loadFiles, 1000);
+        document.getElementById('file-search').addEventListener('input', (e) => {
+            fileSearchQuery = e.target.value;
+            filesCurrentPage = 1;
+            debouncedLoadFiles();
+        });
+
+        document.getElementById('no-tmdb-id-filter').addEventListener('change', (e) => {
+            noTmdbIdFilter = e.target.checked;
+            filesCurrentPage = 1;
+            loadFiles();
+        });
+
+        document.getElementById('no-poster-url-filter').addEventListener('change', (e) => {
+            noPosterUrlFilter = e.target.checked;
+            filesCurrentPage = 1;
+            loadFiles();
+        });
+
+        document.getElementById('channel-filter').addEventListener('change', (e) => {
+            channelFilter = e.target.value;
+            filesCurrentPage = 1;
+            loadFiles();
+        });
+
+        const debouncedLoadTmdbEntries = debounce(loadTmdbEntries, 1000);
+        document.getElementById('tmdb-search').addEventListener('input', (e) => {
+            tmdbSearchQuery = e.target.value;
+            tmdbCurrentPage = 1;
+            debouncedLoadTmdbEntries();
+        });
+
+        document.getElementById('tmdb-type-filter').addEventListener('change', (e) => {
+            tmdbTypeFilter = e.target.value;
+            tmdbCurrentPage = 1;
+            loadTmdbEntries();
+        });
+
+        document.getElementById('tmdb-no-poster-url-filter').addEventListener('change', (e) => {
+            tmdbNoPosterUrlFilter = e.target.checked;
+            tmdbCurrentPage = 1;
+            loadTmdbEntries();
+        });
+
+        document.getElementById('tmdb-type').addEventListener('change', async (e) => {
+            const seasonSelection = document.getElementById('season-selection');
+            if (e.target.value === 'tv') {
+                seasonSelection.style.display = 'block';
+                const tmdbId = document.getElementById('tmdb-id').value;
+                if (tmdbId) {
+                    await loadSeasons(tmdbId);
+                }
+            } else {
+                seasonSelection.style.display = 'none';
+            }
+        });
+
+        document.getElementById('tmdb-prev').addEventListener('click', () => {
+            if (tmdbCurrentPage > 1) {
+                tmdbCurrentPage--;
+                loadTmdbEntries();
+            }
+        });
+
+        document.getElementById('tmdb-next').addEventListener('click', () => {
+            tmdbCurrentPage++;
+            loadTmdbEntries();
+        });
+
+        document.getElementById('files-prev').addEventListener('click', () => {
+            if (filesCurrentPage > 1) {
+                filesCurrentPage--;
+                loadFiles();
+            }
+        });
+
+        document.getElementById('files-next').addEventListener('click', () => {
+            filesCurrentPage++;
+            loadFiles();
+        });
+
+        document.getElementById('comments-prev').addEventListener('click', () => {
+            if (commentsCurrentPage > 1) {
+                commentsCurrentPage--;
+                loadAdminComments();
+            }
+        });
+
+        document.getElementById('comments-next').addEventListener('click', () => {
+            commentsCurrentPage++;
+            loadAdminComments();
+        });
+
+        document.getElementById('show-comments-checkbox').addEventListener('change', () => {
+            commentsCurrentPage = 1;
+            loadAdminComments();
+        });
+        
+        // Run authorization check on page load
+        verifyAuth().then(authorized => {
+            if (authorized) {
+                loadChannels();
+                // We no longer load results by default on page selection
+            }
+        });
+    </script>
+    </div>
+</body>
+</html>

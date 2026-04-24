@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Details</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* —————————— Base Styles —————————— */
+        body {
+            background-color: #141414;
+            color: #fff;
+            font-family: Arial, sans-serif;
+        }
+
+        /* —————————— Backdrop —————————— */
+        .backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+            filter: blur(10px);
+            z-index: -1;
+        }
+
+        .backdrop::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+        }
+
+        /* —————————— Container —————————— */
+        .container {
+            position: relative;
+            z-index: 1;
+            padding: 1rem;
+        }
+
+        .details-container {
+            text-align: center;
+        }
+
+        /* —————————— Buttons —————————— */
+        .btn-primary, .btn-primary:focus, .btn-primary:active {
+            background-color: #e50914 !important;
+            border-color: #e50914 !important;
+            box-shadow: none !important;
+        }
+
+        .btn-primary:hover {
+            background-color: #b20710 !important;
+            border-color: #b20710 !important;
+        }
+
+        .btn-danger, .btn-danger:focus, .btn-danger:active {
+            background-color: #e50914 !important;
+            border-color: #e50914 !important;
+            box-shadow: none !important;
+        }
+
+        .btn-danger:hover {
+            background-color: #b20710 !important;
+            border-color: #b20710 !important;
+        }
+
+        .btn-success {
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* —————————— Typography —————————— */
+        h1 {
+            font-size: 1.5rem;
+            word-break: break-all;
+            margin-top: 1rem;
+        }
+
+        /* —————————— Images —————————— */
+        img {
+            border-radius: 4px;
+            width: 100%;
+            height: auto;
+            object-fit: cover;
+        }
+
+        /* —————————— Responsive Layout —————————— */
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.25rem;
+            }
+
+            .btn-success {
+                width: 100%;
+            }
+        }
+
+        /* —————————— Loader —————————— */
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #e50914;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        .loader-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            width: 100%;
+        }
+
+        .btn-loader {
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top: 2px solid #fff;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Backdrop with blurred background image -->
+    <div class="backdrop"></div>
+
+    <!-- Main container -->
+    <div class="container mt-4">
+        <div id="details-container" class="details-container">
+            <!-- Details will be rendered here by JavaScript -->
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script>
+        // —————————————— DOM Elements & State ——————————————
+        const token = localStorage.getItem('authToken');
+
+        // —————————————— Authorization ——————————————
+        /**
+         * Verifies the user's authorization status with the server.
+         * @returns {Promise<boolean>} True if authorized, false otherwise.
+         */
+        async function verifyAuth() {
+            if (!token) {
+                window.location.href = 'login.html';
+                return false;
+            }
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/user/verify`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (response.status === 401) {
+                    localStorage.removeItem('authToken');
+                    window.location.href = 'login.html';
+                    return false;
+                }
+                return response.ok;
+            } catch (error) {
+                console.error('Auth verification failed:', error);
+                return false;
+            }
+        }
+
+        const authHeader = { 'Authorization': `Bearer ${token}` };
+
+        // Get the file ID from the URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const fileId = urlParams.get('file_id');
+
+        // —————————————— API Functions ——————————————
+        /**
+         * Fetches data with authorization headers and handles 401 errors.
+         * @param {string} url - The URL to fetch from.
+         * @param {object} options - Fetch options.
+         * @param {boolean} showLoader - Whether to show the global loader.
+         * @returns {Promise<Response>} - The fetch response.
+         */
+        async function fetchWithAuth(url, options = {}, showLoader = true) {
+            try {
+                const response = await fetch(url, { ...options, headers: { ...options.headers, ...authHeader } });
+                if (response.status === 401) {
+                    localStorage.removeItem('authToken');
+                    window.location.href = 'login.html';
+                }
+                return response;
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            }
+        }
+
+        /**
+         * Sends a file to the user's Telegram.
+         * @param {string} fileId - The ID of the file to send.
+         * @param {HTMLElement} button - The button that was clicked.
+         */
+        async function sendFile(fileId, button) {
+            const originalText = button.textContent;
+            button.disabled = true;
+            button.innerHTML = '<div class="btn-loader"></div>';
+
+            try {
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/send_file`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file_id: fileId })
+                }, false);
+
+                if (response.ok) {
+                    button.textContent = 'Sent!';
+                    button.classList.remove('btn-danger');
+                    button.classList.add('btn-secondary');
+                } else {
+                    button.disabled = false;
+                    button.textContent = originalText;
+                    if (response.status === 400 || response.status === 403 || response.status === 429) {
+                        const errorData = await response.json();
+                        alert(errorData.detail || 'Failed to send file.');
+                        if (response.status === 429) button.disabled = true;
+                    } else {
+                        console.error('Failed to send file');
+                        alert('Failed to send file. Please contact support.');
+                    }
+                }
+            } catch (error) {
+                button.disabled = false;
+                button.textContent = originalText;
+                console.error('Error sending file:', error);
+                alert('An error occurred. Please contact support.');
+            }
+        }
+
+        /**
+         * Fetches and renders the file details.
+         */
+        async function fetchAndRenderDetails() {
+            document.getElementById('details-container').innerHTML = '<div class="loader-wrapper"><div class="loader"></div></div>';
+            try {
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/file/${fileId}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    renderDetails(data);
+                } else {
+                    console.error('Failed to fetch details');
+                }
+            } catch (error) {
+                console.error('Error fetching details:', error);
+            }
+        }
+
+        // —————————————— UI Rendering Functions ——————————————
+        /**
+         * Renders the file details on the page.
+         * @param {object} details - The file details object.
+         */
+        function renderDetails(details) {
+            const detailsContainer = document.getElementById('details-container');
+            const backdrop = document.querySelector('.backdrop');
+            const posterUrl = details.poster_url || 'https://i.ibb.co/qzmwLvx/No-Image-Available.jpg';
+            backdrop.style.backgroundImage = `url('${posterUrl}')`;
+
+            const displayName = (details.file_title && details.file_artist)
+                ? `${details.file_title} - ${details.file_artist}`
+                : details.file_name;
+
+            detailsContainer.innerHTML = `
+                <div class="row justify-content-center g-3">
+                    <div class="col-md-6">
+                        <img src="${posterUrl}" class="img-fluid" alt="Poster" loading="lazy">
+                        <h1 class="mt-3">${displayName}</h1>
+                        <div class="d-flex justify-content-center gap-2 mt-3">
+                            <button class="btn btn-success" id="play-btn" data-url="${details.stream_url}">Play</button>
+                            <button class="btn btn-danger" onclick="sendFile('${details._id}', this)">Send</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('play-btn').addEventListener('click', function() {
+                const url = this.getAttribute('data-url');
+                if (url) {
+                    window.location.href = url;
+                }
+            });
+        }
+
+        // Disable right-click/long-press menu globally
+        window.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        }, false);
+
+        // —————————————— Initial Load ——————————————
+        verifyAuth().then(authorized => {
+            if (authorized) {
+                fetchAndRenderDetails();
+            }
+        });
+    </script>
+</body>
+
+</html>

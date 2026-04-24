@@ -1,0 +1,15 @@
+Pyrofork==2.3.68
+aiohttp==3.13.0
+cachetools==6.2.1
+fastapi==0.119.0
+mutagen==1.47.0
+motor==3.3.2
+pymongo==4.6.3
+python-dotenv==1.1.1
+requests==2.32.5
+TgCrypto==1.2.5
+uvicorn==0.37.0
+imgbbpy==0.1.3
+parse-torrent-title==2.8.1
+imdbinfo==0.8.3
+
