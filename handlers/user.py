@@ -120,11 +120,13 @@ async def start_handler(client, message):
 @bot.on_message(filters.channel & (filters.document | filters.video | filters.audio | filters.photo))
 async def channel_file_handler(client, message):
     try:
-        allowed_channels = await get_allowed_channels()
-        if message.chat.id not in allowed_channels:
+        channel_id = message.chat.id
+        channel_doc = await allowed_channels_col.find_one({"channel_id": channel_id})
+        if not channel_doc:
             return
 
-        asyncio.create_task(queue_file_for_processing(message))
+        is_no_tmdb = channel_doc.get("is_no_tmdb", False)
+        asyncio.create_task(queue_file_for_processing(message, is_no_tmdb=is_no_tmdb))
         
     except Exception as e:
         logger.error(f"Error in channel_file_handler: {e}")

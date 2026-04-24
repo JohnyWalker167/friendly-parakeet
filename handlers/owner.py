@@ -123,11 +123,14 @@ async def copy_file_handler(client, message):
             except Exception as e:
                 logger.warning(f"Could not get messages in batch {batch_start}-{batch_end}: {e}")
 
+            dest_channel_doc = await allowed_channels_col.find_one({"channel_id": dest_channel_id})
+            is_no_tmdb = dest_channel_doc.get("is_no_tmdb", False) if dest_channel_doc else False
+
             for msg in messages:
                 if not msg:
                     continue
                 if msg.document or msg.video:
-                    caption = msg.caption or getattr(media, "file_name")
+                    caption = msg.caption or "file"
                     caption = remove_unwanted(caption)
 
                     copied_msg = await safe_api_call(lambda: client.copy_message(
@@ -142,6 +145,7 @@ async def copy_file_handler(client, message):
                             copied_msg,
                             channel_id=dest_channel_id,
                             reply_func=message.reply_text,
+                            is_no_tmdb=is_no_tmdb
                         )
                 await asyncio.sleep(3)
             await safe_api_call(lambda: reply.edit_text(f"🔁 <b>Copying in progress...</b> {count}/{total} files copied so far."))
@@ -198,6 +202,9 @@ async def index_channel_files(client, message):
             except Exception as e:
                 logger.warning(f"Could not get messages in batch {batch_start}-{batch_end}: {e}")
 
+            channel_doc = await allowed_channels_col.find_one({"channel_id": channel_id})
+            is_no_tmdb = channel_doc.get("is_no_tmdb", False) if channel_doc else False
+
             for msg in messages:
                 if not msg:
                     continue
@@ -207,6 +214,7 @@ async def index_channel_files(client, message):
                         channel_id=channel_id,
                         reply_func=reply.edit_text,
                         log_duplicates=log_duplicates,
+                        is_no_tmdb=is_no_tmdb
                     )
                     count += 1
             await safe_api_call(lambda: reply.edit_text(f"🔁 <b>Indexing in progress...</b> {count} files queued so far."))
@@ -345,20 +353,36 @@ async def restart(client, message):
 @bot.on_message(filters.command("add") & filters.private & filters.user(OWNER_ID))
 async def add_channel_handler(client, message: Message):
     if len(message.command) < 3:
-        await message.reply_text("Usage: /add channel_id channel_name")
+        await message.reply_text("Usage: /add channel_id channel_name [notmdb]")
         return
     try:
+        is_no_tmdb = False
+        command_parts = message.command[2:]
+        if command_parts and command_parts[-1].lower() == "notmdb":
+            is_no_tmdb = True
+            command_parts = command_parts[:-1]
+        
         channel_id = int(message.command[1])
-        channel_name = " ".join(message.command[2:])
+        channel_name = " ".join(command_parts)
+        
+        update_data = {
+            "channel_id": channel_id,
+            "channel_name": channel_name,
+            "is_no_tmdb": is_no_tmdb
+        }
+        
         await allowed_channels_col.update_one(
             {"channel_id": channel_id},
             {
-                "$set": {"channel_id": channel_id, "channel_name": channel_name},
+                "$set": update_data,
                 "$unset": {"type": ""}
             },
             upsert=True
         )
-        await message.reply_text(f"✅ Channel {channel_id} ({channel_name}) added to allowed channels.")
+        msg = f"✅ Channel {channel_id} ({channel_name}) added to allowed channels."
+        if is_no_tmdb:
+            msg += "\nTMDB processing: <b>Disabled</b>"
+        await message.reply_text(msg)
     except ValueError:
         await message.reply_text("Invalid channel ID.")
     except Exception as e:
