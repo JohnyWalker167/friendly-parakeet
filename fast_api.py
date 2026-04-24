@@ -384,12 +384,14 @@ async def get_media(
         query["directors"] = ObjectId(director)
 
     if search:
+        query["is_no_tmdb"] = {"$ne": True}
         sanitized_search = bot.sanitize_query(search)
         pipeline = build_search_pipeline(sanitized_search, 'title', query, skip, page_size)
         result = await tmdb_col.aggregate(pipeline).to_list(length=None)
         media = result[0]['results'] if result and 'results' in result[0] else []
         total_media = result[0]['totalCount'][0]['total'] if result and 'totalCount' in result[0] and result[0]['totalCount'] else 0
     else:
+        query["is_no_tmdb"] = {"$ne": True}
         sort_order = []
         if sort == "rating":
             sort_order.append(("rating", -1))
@@ -522,6 +524,47 @@ async def get_season_files(tmdb_id: str, season_number: str, page: int = 1, user
     cache[cache_key] = data
     return data
 
+@api.get("/api/adult")
+async def get_adult(page: int = 1, search: str = None, sort: str = "recent", user_id: int = Depends(get_current_user)):
+    cache_key = f"adult:{page}:{search}:{sort}"
+    cached_data = cache.get(cache_key)
+    if cached_data:
+        return cached_data
+
+    page_size = 12
+    skip = (page - 1) * page_size
+
+    sort_order = [("_id", -1)] if sort == "recent" else [("_id", 1)]
+
+    base_query = {
+        "is_no_tmdb": True,
+        "poster_url": {"$exists": True, "$ne": None}
+    }
+
+    if search:
+        sanitized_search = bot.sanitize_query(search)
+        pipeline = build_search_pipeline(sanitized_search, 'file_name', base_query, skip, page_size)
+        result = await files_col.aggregate(pipeline).to_list(length=None)
+        files = result[0]['results'] if result and 'results' in result[0] else []
+        total_files = result[0]['totalCount'][0]['total'] if result and 'totalCount' in result[0] and result[0]['totalCount'] else 0
+    else:
+        files = await files_col.find(base_query).sort(sort_order).skip(skip).limit(page_size).to_list(length=page_size)
+        total_files = await files_col.count_documents(base_query)
+
+    for file in files:
+        file["_id"] = str(file["_id"])
+        file["stream_url"] = f"{MY_DOMAIN}/player/{bot.encode_file_link(file['channel_id'], file['message_id'], user_id)}"
+        file["title"] = file.get("file_name")
+
+    data = {
+        "files": files,
+        "total_pages": (total_files + page_size - 1) // page_size,
+        "current_page": page,
+        "total_files": total_files,
+    }
+    cache[cache_key] = data
+    return data
+
 @api.get("/api/music")
 async def get_music(page: int = 1, search: str = None, sort: str = "recent", user_id: int = Depends(get_current_user)):
     cache_key = f"music:{page}:{search}:{sort}"
@@ -536,7 +579,8 @@ async def get_music(page: int = 1, search: str = None, sort: str = "recent", use
 
     base_query = {
         "file_format": {"$regex": "^audio/", "$options": "i"},
-        "poster_url": {"$exists": True, "$ne": None}
+        "poster_url": {"$exists": True, "$ne": None},
+        "is_no_tmdb": {"$ne": True}
     }
 
     if search:
@@ -635,3 +679,5 @@ async def stream_player(file_link: str, request: Request):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 '''
+
+api.mount("/", StaticFiles(directory="static_frontend", html=True), name="static")

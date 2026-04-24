@@ -544,13 +544,15 @@ async def file_queue_worker(bot):
     from tmdb import process_tmdb_info
     while True:
         _priority, item = await file_queue.get()
-        file_info, _, message, log_duplicate = item
+        file_info, _, message, log_duplicate, is_no_tmdb = item
         try:
             if await handle_duplicate_file(bot, file_info, log_duplicate):
                 continue
 
             tmdb_info = None
-            if message.audio:
+            if is_no_tmdb:
+                file_info["is_no_tmdb"] = True
+            elif message.audio:
                 await process_audio_file(bot, message, file_info)
             else:
                 # Process TMDB info for video or document files
@@ -578,12 +580,12 @@ async def file_queue_worker(bot):
 # =========================
 
 async def queue_file_for_processing(
-    message, channel_id=None, reply_func=None, log_duplicates=True
+    message, channel_id=None, reply_func=None, log_duplicates=True, is_no_tmdb=False
 ):
     try:
         file_info = extract_file_info(message, channel_id=channel_id)
         if file_info["file_name"]:
-            item = (file_info, reply_func, message, log_duplicates)
+            item = (file_info, reply_func, message, log_duplicates, is_no_tmdb)
             await file_queue.put((message.id, item))
     except Exception as e:
         if reply_func:
