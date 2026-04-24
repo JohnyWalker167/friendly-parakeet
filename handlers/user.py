@@ -18,6 +18,7 @@ from utility import (
     queue_file_for_processing,
 )
 from app import bot
+from db import allowed_channels_col
 
 logger = logging.getLogger(__name__)
 
