@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 @bot.on_chat_member_updated()
 async def on_chat_member_updated_handler(client, chat_member_updated):
     try:
+        if chat_member_updated.from_user and chat_member_updated.from_user.is_bot:
+            return
         if chat_member_updated.new_chat_member and chat_member_updated.new_chat_member.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.MEMBER]:
             user_id = chat_member_updated.from_user.id
             chat_id = chat_member_updated.chat.id
@@ -89,7 +91,7 @@ async def start_handler(client, message):
 
         # --- Authorized or new user ---
         buttons = [
-            [InlineKeyboardButton("⚙️ Configure Channel", callback_data="config_bot")]
+            [InlineKeyboardButton("⚙️ Configure", callback_data="config_bot")]
         ]
         #if CF_DOMAIN:
             #buttons.append([InlineKeyboardButton("🕸️ Website", url=CF_DOMAIN)])
@@ -131,13 +133,15 @@ async def channel_file_handler(client, message):
         
     except Exception as e:
         logger.error(f"Error in channel_file_handler: {e}")
-
+        
+'''
 @bot.on_message(filters.group & filters.service)
 async def delete_service_messages(client, message):
     try:
         await message.delete()
     except Exception as e:
         logger.warning(f"Failed to delete service message in chat {message.chat.id}: {e}")
+'''
 
 @bot.on_callback_query(filters.regex("config_bot"))
 async def config_callback_handler(client, query):
@@ -151,15 +155,18 @@ async def config_callback_handler(client, query):
             ]
         ]
         await query.message.edit_text(
-            "Press the below button to configure channel for TGFLIX",
+            "Press the below button to configure channel for TG⚡FLIX",
             reply_markup=InlineKeyboardMarkup(buttons)
         )
     except Exception as e:
         logger.error(f"⚠️ Error in config_callback_handler: {e}")
+        
 
 @bot.on_chat_join_request()
 async def approve_join_request_handler(client, join_request):
     try:
+        if join_request.chat.id != UPDATE_CHANNEL_ID:
+            return
         await client.approve_chat_join_request(join_request.chat.id, join_request.from_user.id)
 #        await safe_api_call(lambda: bot.send_message(LOG_CHANNEL_ID, f"✅ Approved join request for {join_request.from_user.mention} in {join_request.chat.title}"))
     except (ChatAdminRequired, UserAlreadyParticipant) as e:
