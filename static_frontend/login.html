@@ -130,15 +130,15 @@
 
                 if (response.ok) {
                     if (data.status === 'link') {
-                        showMessage('status', 'Please open this link to get your OTP:');
+                        showMessage('status', 'Watch ads daily to get your OTP 😊 (supports donations)');
                         const link = document.createElement('a');
                         link.href = data.link;
                         link.target = '_blank';
                         link.className = 'btn btn-success w-100 mt-2';
-                        link.textContent = 'Get OTP via Bot';
+                        link.textContent = 'Watch Ads ❤️';
                         statusMessage.appendChild(link);
                     } else {
-                        showMessage('status', 'OTP has been sent to your bot!');
+                        showMessage('status', 'OTP has been sent to bot!');
                     }
                     requestForm.style.display = 'none';
                     verifyForm.style.display = 'block';

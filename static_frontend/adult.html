@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>TG⚡FLIX</title>
+    <title>Adult - TG⚡FLIX</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 
     <style>
@@ -191,37 +191,6 @@
             -webkit-tap-highlight-color: transparent;
         }
 
-        /* Confirmation Modal */
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.85);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-
-        .modal-content {
-            background-color: #1f1f1f;
-            padding: 2rem;
-            border-radius: 10px;
-            text-align: center;
-            max-width: 400px;
-            width: 90%;
-            border: 1px solid #333;
-        }
-
-        .modal-buttons {
-            display: flex;
-            justify-content: center;
-            gap: 1rem;
-            margin-top: 1.5rem;
-        }
-
         /* Fullscreen loader */
         .loader {
             border: 5px solid #f3f3f3;
@@ -245,11 +214,47 @@
                 transform: rotate(360deg);
             }
         }
+
+        /* Age Verification Modal */
+        #age-verification-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.95);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .age-modal-content {
+            background-color: #1f1f1f;
+            padding: 2rem;
+            border-radius: 10px;
+            text-align: center;
+            max-width: 450px;
+            width: 90%;
+            border: 1px solid #333;
+        }
     </style>
 </head>
 
 <body>
-    <div class="container mt-4">
+    <!-- Age Verification Modal -->
+    <div id="age-verification-modal">
+        <div class="age-modal-content">
+            <h2 class="text-danger mb-4">Age Verification</h2>
+            <p class="mb-4">You must be at least 18 years old to view this content. Are you 18 or older?</p>
+            <div class="d-flex justify-content-center gap-3">
+                <button id="verify-yes" class="btn btn-danger px-4">Yes</button>
+                <button id="verify-no" class="btn btn-outline-light px-4">No</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mt-4" id="main-content" style="display: none;">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h1 style="color: red; text-align: center; font-family: Arial, sans-serif;">TG⚡FLIX</h1>
             <h2 id="welcome-message">Welcome!</h2>
@@ -273,7 +278,7 @@
                 <h5 class="card-title text-danger">Settings</h5>
                 <div class="mb-3 d-flex justify-content-center gap-2">
                     <button onclick="window.location.href='index.html'" class="btn btn-danger w-50">Home</button>
-                    <button onclick="window.location.href='adult.html'" class="btn btn-danger w-50">Adult</button>
+                    <button onclick="window.location.href='music.html'" class="btn btn-danger w-50">Music</button>
                 </div>
             </div>
         </div>
@@ -307,12 +312,15 @@
         const gotoPageBtn = document.getElementById('goto-page');
         const toggleConfigBtn = document.getElementById('toggle-config');
         const channelConfigCard = document.getElementById('channel-config-card');
+        const ageModal = document.getElementById('age-verification-modal');
+        const verifyYes = document.getElementById('verify-yes');
+        const verifyNo = document.getElementById('verify-no');
+        const mainContent = document.getElementById('main-content');
         const token = localStorage.getItem('authToken');
         let currentSort = 'recent';
         let currentSearch = '';
         let currentPage = 1;
         let totalPages = 1;
-        let currentType = 'music';
 
         function debounce(func, delay) {
             let timeout;
@@ -345,7 +353,7 @@
 
         async function fetchFiles() {
             fileGrid.innerHTML = '<div class="loader-wrapper"><div class="loader"></div></div>';
-            const url = `${API_BASE_URL}/api/music?page=${currentPage}&search=${currentSearch}&sort=${currentSort}`;
+            const url = `${API_BASE_URL}/api/adult?page=${currentPage}&search=${currentSearch}&sort=${currentSort}`;
             const response = await fetchWithAuth(url);
             if (!response?.ok) return;
 
@@ -365,7 +373,6 @@
                 welcomeMessage.textContent = `Welcome, ${data.first_name}!`;
             }
         }
-
 
         function displayFiles(files) {
             fileGrid.innerHTML = '';
@@ -416,13 +423,7 @@
 
             const titleLink = document.createElement('div');
             titleLink.className = 'file-title';
-            if (currentType === 'music' && file.artist) {
-                titleLink.textContent = `${file.title} - ${file.artist}`;
-            }
-            /* else {
-                titleLink.textContent = file.file_name;
-            }
-            */
+            titleLink.textContent = file.title;
 
             tile.appendChild(titleLink);
 
@@ -500,7 +501,6 @@
             fetchFiles();
         });
 
-
         toggleConfigBtn.addEventListener('click', () => {
             if (channelConfigCard.style.display === 'none') {
                 channelConfigCard.style.display = 'block';
@@ -513,10 +513,17 @@
             }
         });
 
-        /**
-         * Verifies the user's authorization status with the server.
-         * @returns {Promise<boolean>} True if authorized, false otherwise.
-         */
+        verifyYes.addEventListener('click', () => {
+            localStorage.setItem('ageVerified', 'true');
+            ageModal.style.display = 'none';
+            mainContent.style.display = 'block';
+            initializeApp();
+        });
+
+        verifyNo.addEventListener('click', () => {
+            window.location.href = 'index.html';
+        });
+
         async function verifyAuth() {
             if (!token) {
                 window.location.href = 'login.html';
@@ -538,15 +545,6 @@
             }
         }
 
-        // Disable right-click/long-press menu globally
-        window.addEventListener('contextmenu', (e) => {
-            const selection = window.getSelection().toString();
-
-            if (!selection) {
-                e.preventDefault(); // block only if no text is selected
-            }
-        }, false);
-
         async function initializeApp() {
             const authorized = await verifyAuth();
             if (!authorized) return;
@@ -556,7 +554,11 @@
             updateButtonStyles();
         }
 
-        initializeApp();
+        if (localStorage.getItem('ageVerified') === 'true') {
+            ageModal.style.display = 'none';
+            mainContent.style.display = 'block';
+            initializeApp();
+        }
     </script>
 </body>
 

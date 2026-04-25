@@ -262,8 +262,9 @@
         <div id="channel-config-card" class="card bg-dark mb-4 border-secondary" style="display: none;">
             <div class="card-body">
                 <h5 class="card-title text-danger">Settings</h5>
-                <div class="mb-3 d-flex justify-content-center">
+                <div class="mb-3 d-flex justify-content-center gap-2">
                     <button id="music-btn-trigger" class="btn btn-danger w-50" data-target="music">Music</button>
+                    <button id="adult-btn-trigger" class="btn btn-danger w-50" data-target="adult">Adult</button>
                 </div>
             </div>
         </div>
@@ -339,6 +340,7 @@
         const toggleConfigBtn = document.getElementById('toggle-config');
         const channelConfigCard = document.getElementById('channel-config-card');
         const musicBtnTrigger = document.getElementById('music-btn-trigger');
+        const adultBtnTrigger = document.getElementById('adult-btn-trigger');
  
         // —————————————— State Management —————————————— 
         const token = localStorage.getItem('authToken'); 
@@ -776,6 +778,10 @@
 
         musicBtnTrigger.addEventListener('click', () => {
             window.location.href = 'music.html';
+        });
+
+        adultBtnTrigger.addEventListener('click', () => {
+            window.location.href = 'adult.html';
         });
          
         // Disable right-click/long-press menu globally
