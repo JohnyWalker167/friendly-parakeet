@@ -6,7 +6,7 @@ from pyrogram import filters, enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import ChatAdminRequired, UserAlreadyParticipant
 
-from config import BACKUP_CHANNEL_LINK
+from config import BACKUP_CHANNEL_LINK, UPDATE_CHANNEL_ID
 from utility import (
     add_user,
     users_col,
