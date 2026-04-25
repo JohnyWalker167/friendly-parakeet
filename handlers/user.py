@@ -25,27 +25,46 @@ logger = logging.getLogger(__name__)
 @bot.on_chat_member_updated()
 async def on_chat_member_updated_handler(client, chat_member_updated):
     try:
-        if chat_member_updated.from_user and chat_member_updated.from_user.is_bot:
+        # Get bot's own ID
+        me = client.me or await client.get_me()
+        
+        # We only care if the member being updated is the bot itself
+        if not (chat_member_updated.new_chat_member and chat_member_updated.new_chat_member.user.id == me.id):
             return
-        if chat_member_updated.new_chat_member and chat_member_updated.new_chat_member.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.MEMBER]:
-            user_id = chat_member_updated.from_user.id
-            chat_id = chat_member_updated.chat.id
-            
-            # We only update if it's a channel or group
-            if chat_member_updated.chat.type in [enums.ChatType.CHANNEL, enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]:
-                await users_col.update_one(
-                    {"user_id": user_id},
-                    {"$set": {"channel_id": chat_id}},
-                    upsert=False # We assume user is already in DB from /start
-                )
+
+        # Check if the bot was NOT previously a member/admin
+        was_not_member = not chat_member_updated.old_chat_member or chat_member_updated.old_chat_member.status in [
+            enums.ChatMemberStatus.LEFT,
+            enums.ChatMemberStatus.BANNED,
+        ]
+        
+        # If the bot is now a member or administrator
+        if chat_member_updated.new_chat_member.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.MEMBER]:
+            if was_not_member:
+                user_id = chat_member_updated.from_user.id if chat_member_updated.from_user else None
+                if not user_id:
+                    return
                 
-                try:
-                    await client.send_message(
-                        user_id,
-                        f"✅ Successfully configured <b>{chat_member_updated.chat.title}</b> (<code>{chat_id}</code>) as your destination channel!"
+                if chat_member_updated.from_user.is_bot:
+                    return
+
+                chat_id = chat_member_updated.chat.id
+                
+                # We only update if it's a channel or group
+                if chat_member_updated.chat.type in [enums.ChatType.CHANNEL, enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]:
+                    await users_col.update_one(
+                        {"user_id": user_id},
+                        {"$set": {"channel_id": chat_id}},
+                        upsert=False # We assume user is already in DB from /start
                     )
-                except Exception as e:
-                    logger.warning(f"Could not send confirmation message to user {user_id}: {e}")
+                    
+                    try:
+                        await client.send_message(
+                            user_id,
+                            f"✅ Successfully configured <b>{chat_member_updated.chat.title}</b> (<code>{chat_id}</code>) as your destination channel!"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not send confirmation message to user {user_id}: {e}")
     except Exception as e:
         logger.error(f"Error in on_chat_member_updated_handler: {e}")
 
