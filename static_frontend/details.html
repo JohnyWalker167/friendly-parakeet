@@ -663,7 +663,7 @@
                 item.innerHTML = `
                     <span>${file.file_name}</span>
                     <div>
-                        <button class="btn btn-success play-btn" data-url="${file.stream_url}">Play</button>
+                        <button class="btn btn-success play-btn" data-id="${file._id}" data-url="${file.stream_url}">Play</button>
                         <button class="btn btn-danger" onclick="sendFile('${file._id}', this)">Send</button>
                     </div>`;
                 fileList.appendChild(item);
@@ -747,11 +747,44 @@
         });
 
         // Handle play button clicks
-        document.getElementById('file-list').addEventListener('click', (e) => {
+        document.getElementById('file-list').addEventListener('click', async (e) => {
             if (e.target.classList.contains('play-btn')) {
-                const url = e.target.getAttribute('data-url');
-                if (url) {
-                    window.location.href = url;
+                const button = e.target;
+                const fileId = button.getAttribute('data-id');
+                const url = button.getAttribute('data-url');
+                
+                if (!fileId || !url) return;
+
+                const originalText = button.textContent;
+                button.disabled = true;
+                button.innerHTML = '<div class="btn-loader"></div>';
+
+                try {
+                    const response = await fetchWithAuth(`${API_BASE_URL}/api/track_play`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ file_id: fileId })
+                    }, false);
+
+                    if (response.ok) {
+                        window.location.href = url;
+                    } else {
+                        button.disabled = false;
+                        button.textContent = originalText;
+                        if (response.status === 429) {
+                            const errorData = await response.json();
+                            alert(errorData.detail || 'You have reached your daily limit.');
+                            button.disabled = true;
+                        } else {
+                            const errorData = await response.json();
+                            alert(errorData.detail || 'Failed to track play. Please contact support.');
+                        }
+                    }
+                } catch (error) {
+                    button.disabled = false;
+                    button.textContent = originalText;
+                    console.error('Error tracking play:', error);
+                    alert('An error occurred. Please contact support.');
                 }
             }
         });

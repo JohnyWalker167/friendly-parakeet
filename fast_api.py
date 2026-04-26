@@ -53,8 +53,34 @@ api.add_middleware(
     allow_headers=["*"],
 )
 
+class TrackPlayRequest(BaseModel):
+    file_id: str
+
 class SendFileRequest(BaseModel):
     file_id: str
+
+async def check_file_limit(user_id: int):
+    if user_id == OWNER_ID:
+        return
+
+    auth_user = await auth_users_col.find_one({"user_id": user_id})
+    file_count = auth_user.get("file_count", 0) if auth_user else 0
+
+    if file_count >= MAX_FILES_PER_SESSION:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"You have reached your daily limit of {MAX_FILES_PER_SESSION} files."
+        )
+
+async def increment_file_count(user_id: int):
+    if user_id == OWNER_ID:
+        return
+
+    await auth_users_col.update_one(
+        {"user_id": user_id},
+        {"$inc": {"file_count": 1}},
+        upsert=True
+    )
 
 # Dependency to get user_id from Authorization header
 async def get_current_user(authorization: str = Header(None)):
@@ -80,6 +106,22 @@ async def get_current_user(authorization: str = Header(None)):
     except (ValueError, TypeError):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token format")
 
+@api.post("/api/track_play")
+async def track_play(request: TrackPlayRequest, user_id: int = Depends(get_current_user)):
+    try:
+        file = await files_col.find_one({"_id": ObjectId(request.file_id)})
+        if not file:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+        
+        await check_file_limit(user_id)
+        await increment_file_count(user_id)
+        return JSONResponse(content={"message": "Play tracked successfully"})
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Failed to track play for user {user_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to track play")
+
 @api.post("/api/send_file")
 async def send_file_to_user(request: SendFileRequest, user_id: int = Depends(get_current_user)):
     user_data = await users_col.find_one({"user_id": user_id})
@@ -91,14 +133,6 @@ async def send_file_to_user(request: SendFileRequest, user_id: int = Depends(get
             detail="Channel not configured. Please configure through bot first"
         )
 
-    auth_user = await auth_users_col.find_one({"user_id": user_id})
-    file_count = auth_user.get("file_count", 0) if auth_user else 0
-
-    if user_id != OWNER_ID and file_count >= MAX_FILES_PER_SESSION:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"You have reached your daily limit of {MAX_FILES_PER_SESSION} files."
-        )
     try:
         file = await files_col.find_one({"_id": ObjectId(request.file_id)})
         if not file:
@@ -109,6 +143,8 @@ async def send_file_to_user(request: SendFileRequest, user_id: int = Depends(get
         filename = file.get("file_name")
         if not from_channel_id or not message_id:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="File metadata is incomplete")
+
+        await check_file_limit(user_id)
 
         try:
             await bot.copy_message(
@@ -128,15 +164,10 @@ async def send_file_to_user(request: SendFileRequest, user_id: int = Depends(get
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to send file to your channel. Check bot permissions."
             )
-        if user_id != OWNER_ID:         
-            await auth_users_col.update_one(
-                    {"user_id": user_id},
-                    {"$inc": {"file_count": 1}},
-                    upsert=True
-                )
+        
+        await increment_file_count(user_id)
 
         return JSONResponse(content={"message": "File sent successfully"})
-        logging.info(f"File sent successfully to user {user_id}")
 
     except HTTPException:
         raise
