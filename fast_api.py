@@ -709,6 +709,6 @@ async def stream_player(file_link: str, request: Request):
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
+api.mount("/", StaticFiles(directory="static_frontend", html=True), name="static")
 '''
 
-api.mount("/", StaticFiles(directory="static_frontend", html=True), name="static")
