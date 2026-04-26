@@ -29,7 +29,7 @@ from db import (
 )
 from tmdb import POSTER_BASE_URL
 from app import bot
-from config import OWNER_ID, CF_DOMAINX, LOG_CHANNEL_ID
+from config import OWNER_ID, LOG_CHANNEL_ID
 from datetime import datetime, timezone
 from handlers.admin import router as admin_router
 from bson.objectid import ObjectId
@@ -47,7 +47,7 @@ api.include_router(admin_router)
 
 api.add_middleware(
     CORSMiddleware,
-    allow_origins=[f"{CF_DOMAIN}", f"{CF_DOMAINX}"],  # Allow all origins
+    allow_origins=[f"{CF_DOMAIN}"],  # Allow all origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

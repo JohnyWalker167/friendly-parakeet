@@ -59,7 +59,6 @@ SEND_UPDATES = os.getenv('SEND_UPDATES', 'True').lower() in ('true', '1', 't')
 
 MY_DOMAIN = os.getenv('MY_DOMAIN')
 CF_DOMAIN = os.getenv('CF_DOMAIN')
-CF_DOMAINX = os.getenv('CF_DOMAINX')
 API_BASE_URL = os.getenv('API_BASE_URL')
 
 TOKEN_VALIDITY_SECONDS = 24 * 60 * 60  # 24 hours
@@ -75,5 +74,5 @@ IMGBB_API_KEY = os.getenv('IMGBB_API_KEY')
 URLSHORTX_API_TOKEN = os.getenv('URLSHORTX_API_TOKEN')
 SHORTERNER_URL = os.getenv('SHORTERNER_URL')
 
-MAX_FILES_PER_SESSION = int(os.getenv("MAX_FILES_PER_SESSION", "10"))
+MAX_FILES_PER_SESSION = int(os.getenv("MAX_FILES_PER_SESSION", "25"))
 
