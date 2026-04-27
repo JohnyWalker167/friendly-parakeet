@@ -177,16 +177,32 @@ async def approve_join_request_handler(client, join_request):
     except Exception as e:
         logger.error(f"Failed to approve join request: {e}")
 
-async def get_search_results(query_text, page=1):
+async def get_search_results(query_text, page=1, channel_id=None):
     sanitized_search = bot.sanitize_query(query_text)
     skip = (page - 1) * 10
-    pipeline = build_search_pipeline(sanitized_search, 'file_name', skip=skip, limit=10)
+    match_query = {"channel_id": channel_id} if channel_id else None
+    pipeline = build_search_pipeline(sanitized_search, 'file_name', match_query=match_query, skip=skip, limit=10)
     search_result = await files_col.aggregate(pipeline).to_list(length=None)
     
     files = search_result[0]['results'] if search_result and 'results' in search_result[0] else []
     total_count = search_result[0]['totalCount'][0]['total'] if search_result and 'totalCount' in search_result[0] and search_result[0]['totalCount'] else 0
     
     return files, total_count
+
+async def get_filter_keyboard():
+    buttons = []
+    # Fetch all allowed channels
+    async for channel in allowed_channels_col.find():
+        channel_id = channel.get("channel_id")
+        channel_name = channel.get("channel_name", f"Channel {channel_id}")
+        buttons.append([InlineKeyboardButton(channel_name, callback_data=f"apply_filter_{channel_id}")])
+    
+    # Add "All Channels" option
+    buttons.append([InlineKeyboardButton("🌐 All Channels", callback_data="apply_filter_all")])
+    # Add a "Back" button to return to search results
+    buttons.append([InlineKeyboardButton("🔙 Back", callback_data="search_page_1")])
+    
+    return InlineKeyboardMarkup(buttons)
 
 def get_search_keyboard(files, query_text, current_page, total_count):
     buttons = []
@@ -198,11 +214,12 @@ def get_search_keyboard(files, query_text, current_page, total_count):
     if current_page > 1:
         pagination_buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"search_page_{current_page-1}"))
     
+    pagination_buttons.append(InlineKeyboardButton("🔍 Filters", callback_data="search_filters"))
+
     if (current_page * 10) < total_count:
         pagination_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"search_page_{current_page+1}"))
     
-    if pagination_buttons:
-        buttons.append(pagination_buttons)
+    buttons.append(pagination_buttons)
     
     return InlineKeyboardMarkup(buttons)
 
@@ -244,22 +261,69 @@ async def search_message_handler(client, message):
         return
 
     # Regular file search
+    cache[f"query_{user_id}"] = query_text
+    cache.pop(f"filter_{user_id}", None) # Reset filter for new search
+
     files, total_count = await get_search_results(query_text)
     if not files:
         reply = await message.reply_text(f"❌ No results found for: {query_text}")
         bot.loop.create_task(auto_delete_message(message, reply))
         return
     
-    cache[f"query_{user_id}"] = query_text
     keyboard = get_search_keyboard(files, query_text, 1, total_count)
-    await message.reply_text(f"Search results for: <b>{query_text}</b>\nTotal found: {total_count}", reply_markup=keyboard)
+    reply = await message.reply_text(f"Search results for: <b>{query_text}</b>\nFilter: <b>All Channels</b>\nTotal found: {total_count}", reply_markup=keyboard)
     bot.loop.create_task(auto_delete_message(message, reply))
+
+@bot.on_callback_query(filters.regex(r"^search_filters$"))
+async def search_filter_handler(client, query):
+    await query.answer()
+    keyboard = await get_filter_keyboard()
+    await query.message.edit_text(
+        "Select a channel to filter your search results:",
+        reply_markup=keyboard
+    )
+
+@bot.on_callback_query(filters.regex(r"^apply_filter_"))
+async def apply_filter_handler(client, query):
+    user_id = query.from_user.id
+    filter_type = query.data.split("_")[2]
+    
+    query_text = cache.get(f"query_{user_id}")
+    if not query_text:
+        await query.answer("Session expired, please search again.", show_alert=True)
+        return
+
+    channel_id = None if filter_type == "all" else int(filter_type)
+    cache[f"filter_{user_id}"] = channel_id
+    
+    await query.answer(f"Filter applied: {'All Channels' if not channel_id else 'Selected Channel'}")
+    
+    files, total_count = await get_search_results(query_text, page=1, channel_id=channel_id)
+    if not files:
+        await query.message.edit_text(
+            f"❌ No results found for: <b>{query_text}</b> with the selected filter.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔍 Filters", callback_data="search_filters")]])
+        )
+        return
+
+    keyboard = get_search_keyboard(files, query_text, 1, total_count)
+    
+    filter_name = "All Channels"
+    if channel_id:
+        channel_doc = await allowed_channels_col.find_one({"channel_id": channel_id})
+        filter_name = channel_doc.get("channel_name", "Selected Channel") if channel_doc else "Selected Channel"
+
+    await query.message.edit_text(
+        f"Search results for: <b>{query_text}</b>\nFilter: <b>{filter_name}</b>\nTotal found: {total_count}",
+        reply_markup=keyboard
+    )
 
 @bot.on_callback_query(filters.regex(r"^search_page_"))
 async def search_pagination_handler(client, query):
     user_id = query.from_user.id
     page = int(query.data.split("_")[2])
     query_text = cache.get(f"query_{user_id}")
+    channel_id = cache.get(f"filter_{user_id}")
     
     if not query_text:
         await query.answer("Session expired, please search again.", show_alert=True)
@@ -267,11 +331,16 @@ async def search_pagination_handler(client, query):
 
     await query.answer("Loading..")
 
-    files, total_count = await get_search_results(query_text, page=page)
+    files, total_count = await get_search_results(query_text, page=page, channel_id=channel_id)
     keyboard = get_search_keyboard(files, query_text, page, total_count)
     
+    filter_name = "All Channels"
+    if channel_id:
+        channel_doc = await allowed_channels_col.find_one({"channel_id": channel_id})
+        filter_name = channel_doc.get("channel_name", "Selected Channel") if channel_doc else "Selected Channel"
+
     await query.message.edit_text(
-        f"Search results for: <b>{query_text}</b>\nTotal found: {total_count}",
+        f"Search results for: <b>{query_text}</b>\nFilter: <b>{filter_name}</b>\nTotal found: {total_count}",
         reply_markup=keyboard
     )
 
@@ -542,7 +611,7 @@ async def stats_command(client, message):
 async def restart_bot(client, message):
     import sys
     import os
-    await message.reply_text("🔄 Restarting...")
+    await message.delete()
     os.system("python3 update.py")
     os.execl(sys.executable, sys.executable, "bot.py")
 
