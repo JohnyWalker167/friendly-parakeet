@@ -388,7 +388,7 @@ async def update_file_poster(file_id: str, data: dict, admin_id: int = Depends(g
         invalidate_cache()
         return {"status": "success", "poster_url": url}
     except ValueError as e:
-        logger.error(f"Failed to upload poster for file {file_id}: {e}")
+        logger.error(f"Failed to upload poster for file")
         raise HTTPException(status_code=400, detail="Failed to upload image. Please try again.")
     
 @router.delete("/files/{file_id}")
