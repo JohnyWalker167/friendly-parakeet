@@ -265,6 +265,8 @@ async def search_pagination_handler(client, query):
         await query.answer("Session expired, please search again.", show_alert=True)
         return
 
+    await query.answer("Loading..")
+
     files, total_count = await get_search_results(query_text, page=page)
     keyboard = get_search_keyboard(files, query_text, page, total_count)
     
@@ -272,7 +274,6 @@ async def search_pagination_handler(client, query):
         f"Search results for: <b>{query_text}</b>\nTotal found: {total_count}",
         reply_markup=keyboard
     )
-    await query.answer()
 
 @bot.on_callback_query(filters.regex(r"^send_tmdb_"))
 async def send_tmdb_callback_handler(client, callback_query):
@@ -299,7 +300,6 @@ async def send_tmdb_callback_handler(client, callback_query):
                 await client.send_photo(UPDATE_CHANNEL_ID, poster_url, caption=text, reply_markup=keyboard)
             else:
                 await client.send_message(UPDATE_CHANNEL_ID, text, reply_markup=keyboard)
-            await callback_query.edit_message_text(f"✅ Sent {info['title']} to channel!")
         except Exception as e:
             logger.error(f"Error sending TMDB info: {e}")
             await callback_query.answer(f"Failed to send: {e}", show_alert=True)
