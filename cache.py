@@ -1,8 +1,9 @@
-from cachetools import TTLCache
 
-# Unified in-memory cache
-cache = TTLCache(maxsize=1000, ttl=86400)
+class Cache(dict):
+    def invalidate_cache(self):
+        self.clear()
+
+cache = Cache()
 
 def invalidate_cache():
-    """Clears the entire in-memory cache."""
-    cache.clear()
+    cache.invalidate_cache()

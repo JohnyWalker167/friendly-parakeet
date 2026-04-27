@@ -3,24 +3,34 @@ import logging
 import asyncio
 from datetime import datetime
 from pyrogram import filters, enums
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultArticle, InputTextMessageContent, InlineQueryResultPhoto
 from pyrogram.errors import ChatAdminRequired, UserAlreadyParticipant
 
-from config import BACKUP_CHANNEL_LINK, UPDATE_CHANNEL_ID
+from config import BACKUP_CHANNEL_LINK, UPDATE_CHANNEL_ID, BOT_USERNAME, OWNER_ID, LOG_CHANNEL_ID, MY_DOMAIN
 from utility import (
     add_user,
     users_col,
-    get_user_link,
     safe_api_call,
     is_user_subscribed,
     auto_delete_message,
-    get_allowed_channels,
-    queue_file_for_processing,
+    verify_token,
+    is_user_authorized,
+    generate_token,
+    shorten_url,
+    human_readable_size,
+    check_file_limit,
+    increment_file_count,
+    files_col,
+    build_search_pipeline
 )
 from app import bot
+from tmdb import search_tmdb, get_info
+from bson.objectid import ObjectId
 from db import allowed_channels_col
 
 logger = logging.getLogger(__name__)
+
+broadcasting = False
 
 @bot.on_chat_member_updated()
 async def on_chat_member_updated_handler(client, chat_member_updated):
@@ -72,30 +82,20 @@ async def on_chat_member_updated_handler(client, chat_member_updated):
 async def start_handler(client, message):
     try:
         user_id = message.from_user.id
-        user_link = await get_user_link(message.from_user)
         first_name = message.from_user.first_name or "there"
-        username = message.from_user.username or None
         user_doc = await add_user(user_id)
-        joined_date = user_doc.get("joined", "Unknown")
-        joined_str = joined_date.strftime("%Y-%m-%d %H:%M") if isinstance(joined_date, datetime) else str(joined_date)
-
-        # Log new users
-#        if user_doc.get("_new"):
-#            log_msg = (
-#                f"👤 New user added:\n"
-#                f"ID: <code>{user_id}</code>\n"
-#                f"First Name: <b>{first_name}</b>\n"
-#            )
-#            if username:
-#                log_msg += f"Username: @{username}\n"
-#            await safe_api_call(
-#                lambda: bot.send_message(LOG_CHANNEL_ID, log_msg, parse_mode=enums.ParseMode.HTML)
-#            )
 
         # Blocked users
         if user_doc.get("blocked", False):
             return
 
+        # Check for token in start command
+        if len(message.command) > 1:
+            token = message.command[1]
+            if await verify_token(user_id, token):
+                await message.reply_text("✅ Verification successful! You now have access for 24 hours.")
+            else:
+                await message.reply_text("❌ Invalid or expired verification token.")
 
         # --- Check subscription ---
         if not await is_user_subscribed(client, user_id):
@@ -112,25 +112,17 @@ async def start_handler(client, message):
         buttons = [
             [InlineKeyboardButton("⚙️ Configure", callback_data="config_bot")]
         ]
-        #if CF_DOMAIN:
-            #buttons.append([InlineKeyboardButton("🕸️ Website", url=CF_DOMAIN)])
-
-        if buttons:
-            reply_markup = InlineKeyboardMarkup(buttons)
-        else:
-            reply_markup = None             
 
         welcome_text = (
             f"Hi <b>{first_name}</b> 🆔 <code>{user_id}</code> ! 👋\n\n"
             "Thanks for hopping in! 😄\n"
-            "We will reach out to you soon.\n"
-            "Sit tight — we’ll be in touch before you know it! 🚀"
+            "You can use inline search to find files."
         )
 
         reply_msg = await safe_api_call(lambda: message.reply_text(
             welcome_text,
             quote=True,
-            reply_markup=reply_markup
+            reply_markup=InlineKeyboardMarkup(buttons)
         ))
 
         if reply_msg:
@@ -152,15 +144,6 @@ async def channel_file_handler(client, message):
         
     except Exception as e:
         logger.error(f"Error in channel_file_handler: {e}")
-        
-'''
-@bot.on_message(filters.group & filters.service)
-async def delete_service_messages(client, message):
-    try:
-        await message.delete()
-    except Exception as e:
-        logger.warning(f"Failed to delete service message in chat {message.chat.id}: {e}")
-'''
 
 @bot.on_callback_query(filters.regex("config_bot"))
 async def config_callback_handler(client, query):
@@ -174,7 +157,7 @@ async def config_callback_handler(client, query):
             ]
         ]
         await query.message.edit_text(
-            "Press the below button to configure channel for TG⚡FLIX",
+            "Press the below button to configure channel for the bot",
             reply_markup=InlineKeyboardMarkup(buttons)
         )
     except Exception as e:
@@ -187,8 +170,399 @@ async def approve_join_request_handler(client, join_request):
         if join_request.chat.id != UPDATE_CHANNEL_ID:
             return
         await client.approve_chat_join_request(join_request.chat.id, join_request.from_user.id)
-#        await safe_api_call(lambda: bot.send_message(LOG_CHANNEL_ID, f"✅ Approved join request for {join_request.from_user.mention} in {join_request.chat.title}"))
     except (ChatAdminRequired, UserAlreadyParticipant) as e:
         logger.warning(f"Could not approve join request: {e}")
     except Exception as e:
         logger.error(f"Failed to approve join request: {e}")
+
+@bot.on_inline_query()
+async def inline_query_handler(client, query):
+    user_id = query.from_user.id
+    search_text = query.query.strip()
+
+    if not search_text:
+        return
+
+    # Owner only TMDB search
+    if user_id == OWNER_ID and search_text.startswith("tmdb "):
+        tmdb_query = search_text[5:]
+        results = await search_tmdb(tmdb_query)
+        inline_results = []
+        for res in results:
+            poster_url = f"https://image.tmdb.org/t/p/w500{res['poster_path']}" if res['poster_path'] else "https://via.placeholder.com/500x750?text=No+Poster"
+            inline_results.append(
+                InlineQueryResultPhoto(
+                    photo_url=poster_url,
+                    thumb_url=poster_url,
+                    title=f"{res['title']} ({res['year']})",
+                    description=res['media_type'].capitalize(),
+                    caption=f"Click to send {res['title']} info to channel",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("✅ Select", callback_data=f"send_tmdb_{res['media_type']}_{res['id']}")]
+                    ])
+                )
+            )
+        await query.answer(inline_results, cache_time=1)
+        return
+
+    # Verified users only
+    if not await is_user_authorized(user_id):
+        token = await generate_token(user_id)
+        start_link = f"https://t.me/{BOT_USERNAME}?start={token}"
+        short_link = await shorten_url(start_link)
+
+        await query.answer([
+            InlineQueryResultArticle(
+                title="⚠️ Verification Required",
+                input_message_content=InputTextMessageContent("Please verify your account to use search."),
+                description="Click here to get verification link",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔐 Verify Now", url=short_link)]
+                ])
+            )
+        ], cache_time=1)
+        return
+
+    # File search for verified users
+    sanitized_search = bot.sanitize_query(search_text)
+    pipeline = build_search_pipeline(sanitized_search, 'file_name', limit=10)
+    search_result = await files_col.aggregate(pipeline).to_list(length=None)
+    files = search_result[0]['results'] if search_result and 'results' in search_result[0] else []
+
+    inline_results = []
+    for f in files:
+        file_size = human_readable_size(f.get("file_size"))
+        inline_results.append(
+            InlineQueryResultArticle(
+                title=f.get("file_name"),
+                description=f"Size: {file_size}",
+                input_message_content=InputTextMessageContent(f"Selected: {f.get('file_name')}\nSize: {file_size}"),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📥 Send to my channel", callback_data=f"send_file_{f['_id']}")]
+                ])
+            )
+        )
+
+    if not inline_results:
+        await query.answer([
+            InlineQueryResultArticle(
+                title="❌ No results found",
+                input_message_content=InputTextMessageContent(f"No results for: {search_text}")
+            )
+        ], cache_time=1)
+    else:
+        await query.answer(inline_results, cache_time=1)
+
+@bot.on_callback_query(filters.regex(r"^send_tmdb_"))
+async def send_tmdb_callback_handler(client, callback_query):
+    if callback_query.from_user.id != OWNER_ID:
+        await callback_query.answer("Unauthorized", show_alert=True)
+        return
+
+    data = callback_query.data.split("_")
+    tmdb_type = data[2]
+    tmdb_id = data[3]
+
+    info = await get_info(tmdb_type, tmdb_id)
+    if info and "message" in info and not info["message"].startswith("Error"):
+        text = info["message"]
+        poster_url = info.get("poster_url")
+
+        try:
+            keyboard = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🎥 Trailer", url=info["trailer_url"])]]
+            ) if info.get("trailer_url") else None
+
+            if poster_url:
+                await client.send_photo(UPDATE_CHANNEL_ID, poster_url, caption=text, reply_markup=keyboard)
+            else:
+                await client.send_message(UPDATE_CHANNEL_ID, text, reply_markup=keyboard)
+            await callback_query.answer("Sent to channel!")
+        except Exception as e:
+            logger.error(f"Error sending TMDB info: {e}")
+            await callback_query.answer(f"Failed to send: {e}", show_alert=True)
+    else:
+        await callback_query.answer("Failed to get info from TMDB", show_alert=True)
+
+@bot.on_callback_query(filters.regex(r"^send_file_"))
+async def send_file_callback_handler(client, callback_query):
+    user_id = callback_query.from_user.id
+    file_id = callback_query.data.split("_")[2]
+
+    if not await is_user_authorized(user_id):
+        await callback_query.answer("Verification expired. Please re-verify.", show_alert=True)
+        return
+
+    if not await check_file_limit(user_id):
+        await callback_query.answer("Daily limit reached!", show_alert=True)
+        return
+
+    user_data = await users_col.find_one({"user_id": user_id})
+    user_channel_id = user_data.get("channel_id") if user_data else None
+
+    if not user_channel_id:
+        await callback_query.answer("Please configure your channel first!", show_alert=True)
+        return
+
+    try:
+        file = await files_col.find_one({"_id": ObjectId(file_id)})
+        if not file:
+            await callback_query.answer("File not found!", show_alert=True)
+            return
+
+        from_channel_id = file.get("channel_id")
+        message_id = file.get("message_id")
+        filename = file.get("file_name")
+
+        encoded_link = bot.encode_file_link(from_channel_id, message_id, user_id)
+        play_url = f"{MY_DOMAIN}/player/{encoded_link}"
+
+        await bot.copy_message(
+            chat_id=user_channel_id,
+            from_chat_id=from_channel_id,
+            message_id=message_id,
+            caption=f"<b>{filename}</b>",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎬 Play", url=play_url)]
+            ])
+        )
+
+        await increment_file_count(user_id)
+        await callback_query.answer("File sent successfully!")
+
+    except Exception as e:
+        logger.error(f"Error sending file: {e}")
+        await callback_query.answer("Failed to send file. Check bot permissions in your channel.", show_alert=True)
+
+@bot.on_message(filters.command("add") & filters.private & filters.user(OWNER_ID))
+async def add_channel_handler(client, message):
+    if len(message.command) < 3:
+        await message.reply_text("Usage: /add channel_id channel_name [notmdb]")
+        return
+    try:
+        is_no_tmdb = False
+        command_parts = message.command[2:]
+        if command_parts and command_parts[-1].lower() == "notmdb":
+            is_no_tmdb = True
+            command_parts = command_parts[:-1]
+
+        channel_id = int(message.command[1])
+        channel_name = " ".join(command_parts)
+
+        update_data = {
+            "channel_id": channel_id,
+            "channel_name": channel_name,
+            "is_no_tmdb": is_no_tmdb
+        }
+
+        await allowed_channels_col.update_one(
+            {"channel_id": channel_id},
+            {"$set": update_data},
+            upsert=True
+        )
+        msg = f"✅ Channel {channel_id} ({channel_name}) added to allowed channels."
+        if is_no_tmdb:
+            msg += "\nTMDB processing: <b>Disabled</b>"
+        await message.reply_text(msg)
+    except Exception as e:
+        await message.reply_text(f"An error occurred: {e}")
+
+@bot.on_message(filters.command("rm") & filters.private & filters.user(OWNER_ID))
+async def remove_channel_handler(client, message):
+    if len(message.command) != 2:
+        await message.reply_text("Usage: /rm channel_id")
+        return
+    try:
+        channel_id = int(message.command[1])
+        result = await allowed_channels_col.delete_one({"channel_id": channel_id})
+        if result.deleted_count:
+            await message.reply_text(f"✅ Channel {channel_id} removed.")
+        else:
+            await message.reply_text("❌ Channel not found.")
+    except Exception as e:
+        await message.reply_text(f"An error occurred: {e}")
+
+@bot.on_message(filters.command("index") & filters.private & filters.user(OWNER_ID))
+async def index_channel_files(client, message):
+    from utility import extract_channel_and_msg_id, queue_file_for_processing, safe_api_call
+    if len(message.command) < 3:
+        await message.reply_text("Usage: /index <start_link> <end_link>")
+        return
+    try:
+        start_link, end_link = message.command[1], message.command[2]
+        start_channel_id, start_msg_id = extract_channel_and_msg_id(start_link)
+        end_channel_id, end_msg_id = extract_channel_and_msg_id(end_link)
+
+        if start_channel_id != end_channel_id:
+             await message.reply_text("Start and end links must be from the same channel.")
+             return
+
+        channel_id = start_channel_id
+        start_id = min(start_msg_id, end_msg_id)
+        end_id = max(start_msg_id, end_msg_id)
+
+        reply = await message.reply_text(f"🔁 Indexing files from {start_id} to {end_id}...")
+
+        count = 0
+        batch_size = 50
+        for batch_start in range(start_id, end_id + 1, batch_size):
+            batch_end = min(batch_start + batch_size - 1, end_id)
+            ids = list(range(batch_start, batch_end + 1))
+            messages = await safe_api_call(lambda: client.get_messages(channel_id, ids))
+
+            if not messages:
+                continue
+
+            for msg in messages:
+                if msg and (msg.document or msg.video or msg.audio):
+                    await queue_file_for_processing(msg, channel_id=channel_id)
+                    count += 1
+
+            await reply.edit_text(f"🔁 Indexing... {count} files queued.")
+            await asyncio.sleep(2) # Slight delay between batches
+
+        await reply.edit_text(f"✅ Indexing completed! {count} files queued.")
+    except Exception as e:
+        await message.reply_text(f"An error occurred: {e}")
+
+@bot.on_message(filters.command("broadcast") & filters.chat(LOG_CHANNEL_ID))
+async def broadcast_handler(client, message):
+    global broadcasting
+    if message.reply_to_message:
+        if broadcasting:
+            await message.reply_text("already broadcasting")
+            return
+        users = await users_col.find({}, {"_id": 0, "user_id": 1}).to_list(length=None)
+        total_users = len(users)
+        sent_count = 0
+        failed_count = 0
+        removed_count = 0
+        broadcasting = True
+
+        status_message = await safe_api_call(lambda: message.reply_text(
+            f"📢 Broadcast in progress...\n\n"
+            f"👥 Total Users: {total_users}\n"
+            f"✅ Sent: {sent_count}\n"
+            f"❌ Failed: {failed_count}\n"
+            f"🗑️ Removed: {removed_count}",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("Cancel", callback_data="cancel_broadcast")]]
+            )
+        ))
+
+        for i, user in enumerate(users):
+            if not broadcasting:
+                await status_message.edit_text("📢 **Broadcast cancelled.**")
+                break
+            try:
+                msg = message.reply_to_message
+                await asyncio.sleep(3)
+                if msg.forward_from_chat:
+                    await safe_api_call(lambda: msg.copy(chat_id=user["user_id"],
+                                                 caption=f"{msg.caption.html}\n\n✅ <b>Now Available!</b>",
+                                                 reply_markup=msg.reply_markup
+                                                 ))
+                else:
+                    await safe_api_call(lambda: msg.copy(user["user_id"]))
+                sent_count += 1
+            except (UserIsBlocked, InputUserDeactivated, PeerIdInvalid, UserIsBot):
+                await users_col.delete_one({"user_id": user["user_id"]})
+                removed_count += 1
+            except Exception as e:
+                failed_count += 1
+                logger.error(f"Error broadcasting to {user['user_id']}: {e}")
+
+            if i % 10 == 0:
+                await asyncio.sleep(3)
+                await safe_api_call(lambda: status_message.edit_text(
+                    f"📢 Broadcast in progress...\n\n"
+                    f"👥 Total Users: {total_users}\n"
+                    f"✅ Sent: {sent_count}\n"
+                    f"❌ Failed: {failed_count}\n"
+                    f"🗑️ Removed: {removed_count}",
+                    reply_markup=InlineKeyboardMarkup(
+                        [[InlineKeyboardButton("Cancel", callback_data="cancel_broadcast")]]
+                    )
+                ))
+        else:
+            await safe_api_call(lambda: status_message.edit_text(
+                f"✅ Broadcast finished!**\n\n"
+                f"👥 Total Users: {total_users}\n"
+                f"✅ Sent: {sent_count}\n"
+                f"❌ Failed: {failed_count}\n"
+                f"🗑️ Removed: {removed_count}"
+            ))
+
+        broadcasting = False
+
+
+@bot.on_callback_query(filters.regex("cancel_broadcast"))
+async def cancel_broadcast_handler(client, query):
+    global broadcasting
+    if broadcasting:
+        broadcasting = False
+        await query.answer("Cancelling broadcast...", show_alert=True)
+    else:
+        await query.answer("No broadcast in progress.", show_alert=True)
+
+@bot.on_message(filters.command("stats") & filters.private & filters.user(OWNER_ID))
+async def stats_command(client, message):
+    from db import db
+    total_users = await users_col.count_documents({})
+    total_files = await files_col.count_documents({})
+
+    text = (
+        f"📊 **Bot Stats**\n\n"
+        f"👥 Total Users: {total_users}\n"
+        f"📁 Total Files: {total_files}\n"
+    )
+    await message.reply_text(text)
+
+@bot.on_message(filters.command("restart") & filters.private & filters.user(OWNER_ID))
+async def restart_bot(client, message):
+    import sys
+    import os
+    await message.reply_text("🔄 Restarting...")
+    os.system("python3 update.py")
+    os.execl(sys.executable, sys.executable, "bot.py")
+
+@bot.on_message(filters.command("del") & filters.private & filters.user(OWNER_ID))
+async def delete_command(client, message):
+    from utility import extract_channel_and_msg_id
+    try:
+        args = message.command
+        if not (2 <= len(args) <= 3):
+            await message.reply_text("<b>Usage:</b> /del <link> [end_link]")
+            return
+
+        if len(args) == 2:
+            user_input = args[1].strip()
+            try:
+                channel_id, msg_id = extract_channel_and_msg_id(user_input)
+                result = await files_col.delete_one({"channel_id": channel_id, "message_id": msg_id})
+                if result.deleted_count > 0:
+                    await message.reply_text(f"Deleted file with message ID {msg_id}.")
+                else:
+                    await message.reply_text(f"No file record found.")
+            except ValueError:
+                await message.reply_text("Invalid link.")
+
+        elif len(args) == 3:
+            start_link = args[1].strip()
+            end_link = args[2].strip()
+            try:
+                channel_id, start_msg_id = extract_channel_and_msg_id(start_link)
+                _, end_msg_id = extract_channel_and_msg_id(end_link)
+                start_id = min(start_msg_id, end_msg_id)
+                end_id = max(start_msg_id, end_msg_id)
+                result = await files_col.delete_many({
+                    "channel_id": channel_id,
+                    "message_id": {"$gte": start_id, "$lte": end_id}
+                })
+                await message.reply_text(f"Deleted {result.deleted_count} files.")
+            except ValueError as e:
+                await message.reply_text(f"Error: {e}")
+
+    except Exception as e:
+        logger.error(f"Error in delete_command: {e}")
+        await message.reply_text(f"An error occurred: {e}")

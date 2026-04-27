@@ -67,7 +67,6 @@ MONGO_URI = os.getenv("MONGO_URI")
 
 TMDB_API_KEY = os.getenv('TMDB_API_KEY')
 OMDB_API_KEY = os.getenv('OMDB_API_KEY')
-IMGBB_API_KEY = os.getenv('IMGBB_API_KEY')
 
 
 #SHORTERNER API

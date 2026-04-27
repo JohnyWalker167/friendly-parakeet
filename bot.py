@@ -1,4 +1,3 @@
-
 import asyncio
 import uvicorn
 import logging
@@ -8,7 +7,7 @@ from db import files_col
 from utility import file_queue_worker, periodic_expiry_cleanup
 from fast_api import api
 from config import LOG_CHANNEL_ID
-from handlers import owner, user
+from handlers import user
 
 async def main():
     """
