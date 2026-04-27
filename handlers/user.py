@@ -345,9 +345,7 @@ async def send_file_callback_handler(client, callback_query):
         )
         
         await increment_file_count(user_id)
-        await callback_query.answer("File sent successfully!", show_alert=False)
-        await callback_query.message.reply_text(f"✅ Sent: <b>{filename}</b> to your channel!")
-        
+        await callback_query.answer("File sent successfully!", show_alert=False)        
     except Exception as e:
         logger.error(f"Error sending file: {e}")
         await callback_query.answer("Failed to send file. Check bot permissions in your channel.", show_alert=True)
