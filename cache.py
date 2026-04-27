@@ -1,9 +1,8 @@
 
-class Cache(dict):
-    def invalidate_cache(self):
-        self.clear()
+from cachetools import TTLCache
 
-cache = Cache()
+# Cache for 10 minutes, max 1000 items
+cache = TTLCache(maxsize=1000, ttl=600)
 
 def invalidate_cache():
-    cache.invalidate_cache()
+    cache.clear()

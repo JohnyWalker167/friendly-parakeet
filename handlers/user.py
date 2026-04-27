@@ -21,7 +21,9 @@ from utility import (
     check_file_limit,
     increment_file_count,
     files_col,
-    build_search_pipeline
+    build_search_pipeline,
+    queue_file_for_processing, 
+    extract_channel_and_msg_id
 )
 from app import bot
 from tmdb import search_tmdb, get_info
@@ -142,7 +144,6 @@ async def channel_file_handler(client, message):
             return
 
         is_no_tmdb = channel_doc.get("is_no_tmdb", False)
-        from utility import queue_file_for_processing
         asyncio.create_task(queue_file_for_processing(message, is_no_tmdb=is_no_tmdb))
         
     except Exception as e:
@@ -318,7 +319,7 @@ async def send_file_callback_handler(client, callback_query):
     user_channel_id = user_data.get("channel_id") if user_data else None
 
     if not user_channel_id:
-        await callback_query.answer("Please configure your channel first!", show_alert=True)
+        await callback_query.answer("Please configure your channel first! /start", show_alert=True)
         return
 
     try:
@@ -400,7 +401,6 @@ async def remove_channel_handler(client, message):
 
 @bot.on_message(filters.command("index") & filters.private & filters.user(OWNER_ID))
 async def index_channel_files(client, message):
-    from utility import extract_channel_and_msg_id, queue_file_for_processing, safe_api_call
     if len(message.command) < 3:
         await message.reply_text("Usage: /index <start_link> <end_link>")
         return
@@ -418,7 +418,7 @@ async def index_channel_files(client, message):
         end_id = max(start_msg_id, end_msg_id)
         
         reply = await message.reply_text(f"🔁 Indexing files from {start_id} to {end_id}...")
-        
+        safe_api_call
         count = 0
         batch_size = 50
         for batch_start in range(start_id, end_id + 1, batch_size):
@@ -544,7 +544,6 @@ async def restart_bot(client, message):
 
 @bot.on_message(filters.command("del") & filters.private & filters.user(OWNER_ID))
 async def delete_command(client, message):
-    from utility import extract_channel_and_msg_id
     try:
         args = message.command
         if not (2 <= len(args) <= 3):
