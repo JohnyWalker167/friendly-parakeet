@@ -29,7 +29,7 @@ from utility import (
 from app import bot
 from tmdb import search_tmdb, get_info
 from bson.objectid import ObjectId
-from db import allowed_channels_col
+from db import allowed_channels_col, db
 from cache import cache
 
 logger = logging.getLogger(__name__)
@@ -597,32 +597,45 @@ async def cancel_broadcast_handler(client, query):
 
 @bot.on_message(filters.command("stats") & filters.private & filters.user(OWNER_ID))
 async def stats_command(client, message):
-    total_users = await users_col.count_documents({})
-    total_auth_users = await auth_users_col.count_documents({})
-    total_files = await files_col.count_documents({})
-    
-    # Get file count per channel
-    pipeline = [
-        {"$group": {"_id": "$channel_id", "count": {"$sum": 1}}}
-    ]
-    channel_counts = await files_col.aggregate(pipeline).to_list(length=None)
-    
-    channel_stats_text = ""
-    for stat in channel_counts:
-        channel_id = stat["_id"]
-        count = stat["count"]
-        channel_doc = await allowed_channels_col.find_one({"channel_id": channel_id})
-        channel_name = channel_doc.get("channel_name", f"Unknown ({channel_id})") if channel_doc else f"Unknown ({channel_id})"
-        channel_stats_text += f"  - {channel_name}: {count}\n"
+    try:
+        total_auth_users = await auth_users_col.count_documents({})
+        total_users = await users_col.count_documents({})
 
-    text = (
-        f"📊 <b>Bot Stats</b>\n\n"
-        f"🔐 Authorized Users: {total_auth_users} / {total_users}\n"
-        f"📁 Total Files: {total_files}\n\n"
-        f"📺 <b>Channel-wise Files:</b>\n"
-        f"{channel_stats_text if channel_stats_text else '  None'}"
-    )
-    await message.reply_text(text)
+        pipeline = [
+            {"$group": {"_id": None, "total": {"$sum": "$file_size"}}}
+        ]
+        result = await files_col.aggregate(pipeline).to_list(length=None)
+        total_storage = result[0]["total"] if result else 0
+
+        stats = await db.command("dbstats")
+        db_storage = stats.get("storageSize", 0)
+
+        channel_pipeline = [
+            {"$group": {"_id": "$channel_id", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}}
+        ]
+        channel_counts = await files_col.aggregate(channel_pipeline).to_list(length=None)
+        channel_docs = await allowed_channels_col.find({}, {"_id": 0, "channel_id": 1, "channel_name": 1}).to_list(length=None)
+        channel_names = {c["channel_id"]: c.get("channel_name", "") for c in channel_docs}
+
+        text = (
+            f"<b>Total auth users:</b> {total_auth_users} / {total_users}\n"
+            f"<b>Files size:</b> {human_readable_size(total_storage)}\n"
+            f"<b>Database storage used:</b> {db_storage / (1024 * 1024):.2f} MB\n"
+        )
+
+        if not channel_counts:
+            text += " <b>No files indexed yet.</b>"
+        else:
+            for c in channel_counts:
+                chan_id = c['_id']
+                chan_name = channel_names.get(chan_id, 'Unknown')
+                text += f"<b>{chan_name}</b>: {c['count']} files\n"
+
+        reply = await message.reply_text(text, parse_mode=enums.ParseMode.HTML)
+        bot.loop.create_task(auto_delete_message(message, reply))
+    except Exception as e:
+        logger.error(f"Error in stats_command: {e}")
 
 @bot.on_message(filters.command("restart") & filters.private & filters.user(OWNER_ID))
 async def restart_bot(client, message):
@@ -673,7 +686,7 @@ async def delete_command(client, message):
         await message.reply_text(f"An error occurred: {e}")
 
 @bot.on_message(filters.command("log") & filters.private & filters.user(OWNER_ID))
-async def send_log_file(client, message: Message):
+async def send_log_file(client, message):
     log_file = "bot_log.txt"
     try:
         if not os.path.exists(log_file):
