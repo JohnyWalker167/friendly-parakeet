@@ -502,12 +502,18 @@ async def index_channel_files(client, message):
             if not messages:
                 continue
 
+            new_files_in_batch = 0
             for msg in messages:
                 if msg and (msg.document or msg.video or msg.audio):
                     await queue_file_for_processing(msg, channel_id=channel_id)
                     count += 1
+                    new_files_in_batch += 1
             
-            await reply.edit_text(f"🔁 Indexing... {count} files queued.")
+            if new_files_in_batch > 0:
+                try:
+                    await reply.edit_text(f"🔁 Indexing... {count} files queued.")
+                except Exception:
+                    pass
             await asyncio.sleep(2) # Slight delay between batches
         
         await reply.edit_text(f"✅ Indexing completed! {count} files queued.")
@@ -596,14 +602,30 @@ async def cancel_broadcast_handler(client, query):
 
 @bot.on_message(filters.command("stats") & filters.private & filters.user(OWNER_ID))
 async def stats_command(client, message):
-    from db import db
     total_users = await users_col.count_documents({})
+    total_auth_users = await auth_users_col.count_documents({})
     total_files = await files_col.count_documents({})
     
+    # Get file count per channel
+    pipeline = [
+        {"$group": {"_id": "$channel_id", "count": {"$sum": 1}}}
+    ]
+    channel_counts = await files_col.aggregate(pipeline).to_list(length=None)
+    
+    channel_stats_text = ""
+    for stat in channel_counts:
+        channel_id = stat["_id"]
+        count = stat["count"]
+        channel_doc = await allowed_channels_col.find_one({"channel_id": channel_id})
+        channel_name = channel_doc.get("channel_name", f"Unknown ({channel_id})") if channel_doc else f"Unknown ({channel_id})"
+        channel_stats_text += f"  - {channel_name}: {count}\n"
+
     text = (
         f"📊 **Bot Stats**\n\n"
-        f"👥 Total Users: {total_users}\n"
-        f"📁 Total Files: {total_files}\n"
+        f"🔐 Authorized Users: {total_auth_users}/total_users\n"
+        f"📁 Total Files: {total_files}\n\n"
+        f"📺 **Channel-wise Files:**\n"
+        f"{channel_stats_text if channel_stats_text else '  None'}"
     )
     await message.reply_text(text)
 
