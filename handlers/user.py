@@ -224,7 +224,7 @@ def get_search_keyboard(files, query_text, current_page, total_count):
     
     return InlineKeyboardMarkup(buttons)
 
-@bot.on_message(filters.private & filters.text & ~filters.command(["start", "add", "rm", "index", "stats", "restart", "del", "broadcast"]))
+@bot.on_message(filters.private & filters.text & ~filters.command(["start", "add", "rm", "index", "stats", "restart", "del", "broadcast", "log"]))
 async def search_message_handler(client, message):
     user_id = message.from_user.id
     query_text = message.text.strip()
@@ -671,3 +671,15 @@ async def delete_command(client, message):
     except Exception as e:
         logger.error(f"Error in delete_command: {e}")
         await message.reply_text(f"An error occurred: {e}")
+
+@bot.on_message(filters.command("log") & filters.private & filters.user(OWNER_ID))
+async def send_log_file(client, message: Message):
+    log_file = "bot_log.txt"
+    try:
+        if not os.path.exists(log_file):
+            await safe_api_call(lambda: message.reply_text("Log file not found."))
+            return
+        reply = await safe_api_call(lambda: client.send_document(message.chat.id, log_file, caption="Here is the log file."))
+        bot.loop.create_task(auto_delete_message(message, reply))
+    except Exception as e:
+        logger.error(f"Failed to send log file: {e}")
