@@ -130,10 +130,8 @@ async def start_handler(client, message):
             reply_markup=InlineKeyboardMarkup(buttons)
         ))
         bot.loop.create_task(auto_delete_message(message, reply_msg))
-        return
     except Exception as e:
         logger.error(f"⚠️ Error in start_handler: {e}")
-        return
 
 @bot.on_message(filters.channel & (filters.document | filters.video | filters.audio | filters.photo))
 async def channel_file_handler(client, message):
@@ -220,10 +218,12 @@ async def search_message_handler(client, message):
         token = await generate_token(user_id)
         start_link = f"https://t.me/{BOT_USERNAME}?start={token}"
         short_link = await shorten_url(start_link)
-        await message.reply_text(
+        reply = await message.reply_text(
             "⚠️ Verification Required\n\nPlease verify your account to use search.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔐 Verify Now", url=short_link)]])
         )
+
+        bot.loop.create_task(auto_delete_message(message, reply))
         return
 
     # Owner TMDB search
@@ -231,25 +231,29 @@ async def search_message_handler(client, message):
         tmdb_query = query_text[5:]
         results = await search_tmdb(tmdb_query)
         if not results:
-            await message.reply_text("❌ No TMDB results found.")
+            reply = await message.reply_text("❌ No TMDB results found.")
+            bot.loop.create_task(auto_delete_message(message, reply))
             return
         
         buttons = []
         for res in results:
             buttons.append([InlineKeyboardButton(f"🎬 {res['title']} ({res['year']})", callback_data=f"send_tmdb_{res['media_type']}_{res['id']}")])
         
-        await message.reply_text(f"TMDB Results for: {tmdb_query}", reply_markup=InlineKeyboardMarkup(buttons))
+        reply = await message.reply_text(f"TMDB Results for: {tmdb_query}", reply_markup=InlineKeyboardMarkup(buttons))
+        bot.loop.create_task(auto_delete_message(message, reply))
         return
 
     # Regular file search
     files, total_count = await get_search_results(query_text)
     if not files:
-        await message.reply_text(f"❌ No results found for: {query_text}")
+        reply = await message.reply_text(f"❌ No results found for: {query_text}")
+        bot.loop.create_task(auto_delete_message(message, reply))
         return
     
     cache[f"query_{user_id}"] = query_text
     keyboard = get_search_keyboard(files, query_text, 1, total_count)
     await message.reply_text(f"Search results for: <b>{query_text}</b>\nTotal found: {total_count}", reply_markup=keyboard)
+    bot.loop.create_task(auto_delete_message(message, reply))
 
 @bot.on_callback_query(filters.regex(r"^search_page_"))
 async def search_pagination_handler(client, query):
