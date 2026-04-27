@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime
 from pyrogram import filters, enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultArticle, InputTextMessageContent, InlineQueryResultPhoto
-from pyrogram.errors import ChatAdminRequired, UserAlreadyParticipant
+from pyrogram.errors import ChatAdminRequired, UserAlreadyParticipant, UserIsBlocked, InputUserDeactivated, PeerIdInvalid, UserIsBot
 
 from config import BACKUP_CHANNEL_LINK, UPDATE_CHANNEL_ID, BOT_USERNAME, OWNER_ID, LOG_CHANNEL_ID, MY_DOMAIN
 from utility import (
@@ -110,6 +110,7 @@ async def start_handler(client, message):
 
         # --- Authorized or new user ---
         buttons = [
+            [InlineKeyboardButton("🔍 Search", switch_inline_query_current_chat="")],
             [InlineKeyboardButton("⚙️ Configure", callback_data="config_bot")]
         ]
 
@@ -179,7 +180,7 @@ async def approve_join_request_handler(client, join_request):
 async def inline_query_handler(client, query):
     user_id = query.from_user.id
     search_text = query.query.strip()
-
+    
     if not search_text:
         return
 
@@ -192,14 +193,12 @@ async def inline_query_handler(client, query):
             poster_url = f"https://image.tmdb.org/t/p/w500{res['poster_path']}" if res['poster_path'] else "https://via.placeholder.com/500x750?text=No+Poster"
             inline_results.append(
                 InlineQueryResultPhoto(
+                    id=f"tmdb_{res['media_type']}_{res['id']}",
                     photo_url=poster_url,
                     thumb_url=poster_url,
                     title=f"{res['title']} ({res['year']})",
                     description=res['media_type'].capitalize(),
-                    caption=f"Click to send {res['title']} info to channel",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("✅ Select", callback_data=f"send_tmdb_{res['media_type']}_{res['id']}")]
-                    ])
+                    caption=f"⚡ Sending {res['title']} info to channel..."
                 )
             )
         await query.answer(inline_results, cache_time=1)
@@ -210,7 +209,7 @@ async def inline_query_handler(client, query):
         token = await generate_token(user_id)
         start_link = f"https://t.me/{BOT_USERNAME}?start={token}"
         short_link = await shorten_url(start_link)
-
+        
         await query.answer([
             InlineQueryResultArticle(
                 title="⚠️ Verification Required",
@@ -228,21 +227,19 @@ async def inline_query_handler(client, query):
     pipeline = build_search_pipeline(sanitized_search, 'file_name', limit=10)
     search_result = await files_col.aggregate(pipeline).to_list(length=None)
     files = search_result[0]['results'] if search_result and 'results' in search_result[0] else []
-
+    
     inline_results = []
     for f in files:
         file_size = human_readable_size(f.get("file_size"))
         inline_results.append(
             InlineQueryResultArticle(
+                id=f"file_{f['_id']}",
                 title=f.get("file_name"),
                 description=f"Size: {file_size}",
-                input_message_content=InputTextMessageContent(f"Selected: {f.get('file_name')}\nSize: {file_size}"),
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📥 Send to my channel", callback_data=f"send_file_{f['_id']}")]
-                ])
+                input_message_content=InputTextMessageContent(f"⚡ Sending file to your channel...\n\n<b>{f.get('file_name')}</b>")
             )
         )
-
+    
     if not inline_results:
         await query.answer([
             InlineQueryResultArticle(
@@ -253,86 +250,6 @@ async def inline_query_handler(client, query):
     else:
         await query.answer(inline_results, cache_time=1)
 
-@bot.on_callback_query(filters.regex(r"^send_tmdb_"))
-async def send_tmdb_callback_handler(client, callback_query):
-    if callback_query.from_user.id != OWNER_ID:
-        await callback_query.answer("Unauthorized", show_alert=True)
-        return
-
-    data = callback_query.data.split("_")
-    tmdb_type = data[2]
-    tmdb_id = data[3]
-
-    info = await get_info(tmdb_type, tmdb_id)
-    if info and "message" in info and not info["message"].startswith("Error"):
-        text = info["message"]
-        poster_url = info.get("poster_url")
-
-        try:
-            keyboard = InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🎥 Trailer", url=info["trailer_url"])]]
-            ) if info.get("trailer_url") else None
-
-            if poster_url:
-                await client.send_photo(UPDATE_CHANNEL_ID, poster_url, caption=text, reply_markup=keyboard)
-            else:
-                await client.send_message(UPDATE_CHANNEL_ID, text, reply_markup=keyboard)
-            await callback_query.answer("Sent to channel!")
-        except Exception as e:
-            logger.error(f"Error sending TMDB info: {e}")
-            await callback_query.answer(f"Failed to send: {e}", show_alert=True)
-    else:
-        await callback_query.answer("Failed to get info from TMDB", show_alert=True)
-
-@bot.on_callback_query(filters.regex(r"^send_file_"))
-async def send_file_callback_handler(client, callback_query):
-    user_id = callback_query.from_user.id
-    file_id = callback_query.data.split("_")[2]
-
-    if not await is_user_authorized(user_id):
-        await callback_query.answer("Verification expired. Please re-verify.", show_alert=True)
-        return
-
-    if not await check_file_limit(user_id):
-        await callback_query.answer("Daily limit reached!", show_alert=True)
-        return
-
-    user_data = await users_col.find_one({"user_id": user_id})
-    user_channel_id = user_data.get("channel_id") if user_data else None
-
-    if not user_channel_id:
-        await callback_query.answer("Please configure your channel first!", show_alert=True)
-        return
-
-    try:
-        file = await files_col.find_one({"_id": ObjectId(file_id)})
-        if not file:
-            await callback_query.answer("File not found!", show_alert=True)
-            return
-
-        from_channel_id = file.get("channel_id")
-        message_id = file.get("message_id")
-        filename = file.get("file_name")
-
-        encoded_link = bot.encode_file_link(from_channel_id, message_id, user_id)
-        play_url = f"{MY_DOMAIN}/player/{encoded_link}"
-
-        await bot.copy_message(
-            chat_id=user_channel_id,
-            from_chat_id=from_channel_id,
-            message_id=message_id,
-            caption=f"<b>{filename}</b>",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🎬 Play", url=play_url)]
-            ])
-        )
-
-        await increment_file_count(user_id)
-        await callback_query.answer("File sent successfully!")
-
-    except Exception as e:
-        logger.error(f"Error sending file: {e}")
-        await callback_query.answer("Failed to send file. Check bot permissions in your channel.", show_alert=True)
 
 @bot.on_message(filters.command("add") & filters.private & filters.user(OWNER_ID))
 async def add_channel_handler(client, message):
@@ -345,16 +262,16 @@ async def add_channel_handler(client, message):
         if command_parts and command_parts[-1].lower() == "notmdb":
             is_no_tmdb = True
             command_parts = command_parts[:-1]
-
+        
         channel_id = int(message.command[1])
         channel_name = " ".join(command_parts)
-
+        
         update_data = {
             "channel_id": channel_id,
             "channel_name": channel_name,
             "is_no_tmdb": is_no_tmdb
         }
-
+        
         await allowed_channels_col.update_one(
             {"channel_id": channel_id},
             {"$set": update_data},
@@ -392,24 +309,24 @@ async def index_channel_files(client, message):
         start_link, end_link = message.command[1], message.command[2]
         start_channel_id, start_msg_id = extract_channel_and_msg_id(start_link)
         end_channel_id, end_msg_id = extract_channel_and_msg_id(end_link)
-
+        
         if start_channel_id != end_channel_id:
              await message.reply_text("Start and end links must be from the same channel.")
              return
-
+             
         channel_id = start_channel_id
         start_id = min(start_msg_id, end_msg_id)
         end_id = max(start_msg_id, end_msg_id)
-
+        
         reply = await message.reply_text(f"🔁 Indexing files from {start_id} to {end_id}...")
-
+        
         count = 0
         batch_size = 50
         for batch_start in range(start_id, end_id + 1, batch_size):
             batch_end = min(batch_start + batch_size - 1, end_id)
             ids = list(range(batch_start, batch_end + 1))
             messages = await safe_api_call(lambda: client.get_messages(channel_id, ids))
-
+            
             if not messages:
                 continue
 
@@ -417,10 +334,10 @@ async def index_channel_files(client, message):
                 if msg and (msg.document or msg.video or msg.audio):
                     await queue_file_for_processing(msg, channel_id=channel_id)
                     count += 1
-
+            
             await reply.edit_text(f"🔁 Indexing... {count} files queued.")
             await asyncio.sleep(2) # Slight delay between batches
-
+        
         await reply.edit_text(f"✅ Indexing completed! {count} files queued.")
     except Exception as e:
         await message.reply_text(f"An error occurred: {e}")
@@ -510,7 +427,7 @@ async def stats_command(client, message):
     from db import db
     total_users = await users_col.count_documents({})
     total_files = await files_col.count_documents({})
-
+    
     text = (
         f"📊 **Bot Stats**\n\n"
         f"👥 Total Users: {total_users}\n"
@@ -546,7 +463,7 @@ async def delete_command(client, message):
                     await message.reply_text(f"No file record found.")
             except ValueError:
                 await message.reply_text("Invalid link.")
-
+        
         elif len(args) == 3:
             start_link = args[1].strip()
             end_link = args[2].strip()
@@ -566,3 +483,74 @@ async def delete_command(client, message):
     except Exception as e:
         logger.error(f"Error in delete_command: {e}")
         await message.reply_text(f"An error occurred: {e}")
+
+@bot.on_chosen_inline_result()
+async def chosen_inline_result_handler(client, chosen_inline_result):
+    user_id = chosen_inline_result.from_user.id
+    result_id = chosen_inline_result.result_id
+    
+    if result_id.startswith("tmdb_"):
+        if user_id != OWNER_ID:
+            return
+        
+        parts = result_id.split("_")
+        tmdb_type = parts[1]
+        tmdb_id = parts[2]
+        
+        info = await get_info(tmdb_type, tmdb_id)
+        if info and "message" in info and not info["message"].startswith("Error"):
+            text = info["message"]
+            poster_url = info.get("poster_url")
+            
+            keyboard = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🎥 Trailer", url=info["trailer_url"])]]
+            ) if info.get("trailer_url") else None
+
+            try:
+                if poster_url:
+                    await client.send_photo(UPDATE_CHANNEL_ID, poster_url, caption=text, reply_markup=keyboard)
+                else:
+                    await client.send_message(UPDATE_CHANNEL_ID, text, reply_markup=keyboard)
+            except Exception as e:
+                logger.error(f"Error sending TMDB info in chosen_inline_result: {e}")
+
+    elif result_id.startswith("file_"):
+        file_id = result_id.split("_")[1]
+        
+        if not await is_user_authorized(user_id):
+            return
+
+        if not await check_file_limit(user_id):
+            return
+
+        user_data = await users_col.find_one({"user_id": user_id})
+        user_channel_id = user_data.get("channel_id") if user_data else None
+
+        if not user_channel_id:
+            return
+
+        try:
+            file = await files_col.find_one({"_id": ObjectId(file_id)})
+            if not file:
+                return
+
+            from_channel_id = file.get("channel_id")
+            message_id = file.get("message_id")
+            filename = file.get("file_name")
+            
+            encoded_link = bot.encode_file_link(from_channel_id, message_id, user_id)
+            play_url = f"{MY_DOMAIN}/player/{encoded_link}"
+            
+            await bot.copy_message(
+                chat_id=user_channel_id,
+                from_chat_id=from_channel_id,
+                message_id=message_id,
+                caption=f"<b>{filename}</b>",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🎬 Play", url=play_url)]
+                ])
+            )
+            
+            await increment_file_count(user_id)
+        except Exception as e:
+            logger.error(f"Error sending file in chosen_inline_result: {e}")

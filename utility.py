@@ -203,7 +203,7 @@ def extract_file_info(message, channel_id=None):
         file_info["file_name"] = caption_name or "photo.jpg"
         file_info["file_size"] = getattr(message.photo, "file_size", None)
         file_info["file_format"] = "image/jpeg"
-
+    
     if file_info["file_name"]:
          file_info["file_name"] = remove_extension(
             re.sub(r"[',]", "", file_info["file_name"].replace("&", "and")).split("\n")[0]
@@ -335,11 +335,11 @@ def remove_redandent(filename):
 
     patterns = [
         r"^@[\w\.-]+?(?=_)",
-        r"_@[A-Za-z]+_|@[A-Za-z]+_|[\[\]\s@]*@[^.\s\[\]]+[\]\[\s@]*",
-        r"^[\w\.-]+?(?=_Uploads_)",
-        r"^(?:by|from)[\s_-]+[\w\.-]+?(?=_)",
-        r"^\[[\w\.-]+?\][\s_-]*",
-        r"^\([\w\.-]+?\)[\s_-]*",
+        r"_@[A-Za-z]+_|@[A-Za-z]+_|[\[\]\s@]*@[^.\s\[\]]+[\]\[\s@]*",  
+        r"^[\w\.-]+?(?=_Uploads_)",  
+        r"^(?:by|from)[\s_-]+[\w\.-]+?(?=_)",  
+        r"^\[[\w\.-]+?\][\s_-]*",  
+        r"^\([\w\.-]+?\)[\s_-]*",  
     ]
 
     result = filename
@@ -347,13 +347,22 @@ def remove_redandent(filename):
         match = re.search(pattern, result)
         if match:
             result = re.sub(pattern, " ", result)
-            break
+            break  
 
     result = re.sub(r"^[_\s-]+|[_\s-]+$", " ", result)
 
     return result
 
 async def generate_token(user_id):
+    existing = await otp_col.find_one({"user_id": user_id})
+    if existing:
+        expiry = existing["expiry"]
+        if isinstance(expiry, datetime) and expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        
+        if expiry > datetime.now(timezone.utc):
+            return existing["token"]
+
     token = str(uuid.uuid4())
     expiry = datetime.now(timezone.utc) + timedelta(hours=24)
 
@@ -464,7 +473,7 @@ def build_search_pipeline(query, search_field, match_query=None, skip=0, limit=1
     pipeline = [search_stage]
     if match_stage:
         pipeline.append(match_stage)
-
+    
     pipeline.append(project_stage)
     pipeline.append(facet_stage)
 
@@ -477,3 +486,15 @@ def extract_channel_and_msg_id(link):
         msg_id = int(match.group(2))
         return channel_id, msg_id
     raise ValueError("Invalid Telegram message link format. Only /c/ links are supported.")
+
+async def queue_file_for_processing(
+    message, channel_id=None, reply_func=None, log_duplicates=True, is_no_tmdb=False
+):
+    try:
+        file_info = extract_file_info(message, channel_id=channel_id)
+        if file_info["file_name"]:
+            item = (file_info, reply_func, message, log_duplicates, is_no_tmdb)
+            await file_queue.put((message.id, item))
+    except Exception as e:
+        if reply_func:
+            await safe_api_call(lambda: reply_func(f"❌ Error queuing file: {e}"))

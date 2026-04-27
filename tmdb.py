@@ -9,7 +9,7 @@ POSTER_BASE_URL = 'https://image.tmdb.org/t/p/original'
 
 GENRE_EMOJI_MAP = { 
     "Action": "🥊", "Adventure": "🌋", "Animation": "🎬", "Comedy": "😂", 
-    "Crime": "🕵️", "Documentary": "🎥", "Drama": "🎭", "Family": "👨‍👩+👧+👦",
+    "Drama": "🎭", "Family": "👨‍👩‍👧‍👦", 
     "Fantasy": "🧙", "History": "📜", "Horror": "👻", "Music": "🎵", 
     "Mystery": "🕵️‍♂️", "Romance": "❤️", "ScienceFiction": "🤖", 
     "Sci-Fi": "🤖", "SciFi": "🤖", "TV Movie": "📺", "Thriller": "🔪", 
