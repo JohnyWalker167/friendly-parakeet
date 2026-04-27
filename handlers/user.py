@@ -120,7 +120,7 @@ async def start_handler(client, message):
         ]
 
         welcome_text = (
-            f"Hi <b>{first_name}</b> 🆔 <code>{user_id}</code> ! 👋\n\n"
+            f"Hi <b>{first_name}</b> ! 👋\n\n"
             "Thanks for hopping in! 😄\n"
             "Send me a query to search for"
         )
@@ -548,18 +548,12 @@ async def broadcast_handler(client, message):
 
         for i, user in enumerate(users):
             if not broadcasting:
-                await status_message.edit_text("📢 **Broadcast cancelled.**")
+                await status_message.edit_text("📢 <b>Broadcast cancelled.</b>")
                 break
             try:
                 msg = message.reply_to_message
                 await asyncio.sleep(3)
-                if msg.forward_from_chat:
-                    await safe_api_call(lambda: msg.copy(chat_id=user["user_id"],
-                                                 caption=f"{msg.caption.html}\n\n✅ <b>Now Available!</b>",
-                                                 reply_markup=msg.reply_markup
-                                                 ))
-                else:
-                    await safe_api_call(lambda: msg.copy(user["user_id"]))
+                await safe_api_call(lambda: msg.copy(user["user_id"]))
                 sent_count += 1
             except (UserIsBlocked, InputUserDeactivated, PeerIdInvalid, UserIsBot):
                 await users_col.delete_one({"user_id": user["user_id"]})
@@ -582,7 +576,7 @@ async def broadcast_handler(client, message):
                 ))
         else:
             await safe_api_call(lambda: status_message.edit_text(
-                f"✅ Broadcast finished!**\n\n"
+                f"✅ Broadcast finished!\n\n"
                 f"👥 Total Users: {total_users}\n"
                 f"✅ Sent: {sent_count}\n"
                 f"❌ Failed: {failed_count}\n"
@@ -622,10 +616,10 @@ async def stats_command(client, message):
         channel_stats_text += f"  - {channel_name}: {count}\n"
 
     text = (
-        f"📊 **Bot Stats**\n\n"
-        f"🔐 Authorized Users: {total_auth_users}/total_users\n"
+        f"📊 <b>Bot Stats</b>\n\n"
+        f"🔐 Authorized Users: {total_auth_users} / {total_users}\n"
         f"📁 Total Files: {total_files}\n\n"
-        f"📺 **Channel-wise Files:**\n"
+        f"📺 <b>Channel-wise Files:</b>\n"
         f"{channel_stats_text if channel_stats_text else '  None'}"
     )
     await message.reply_text(text)
