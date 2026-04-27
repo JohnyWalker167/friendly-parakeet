@@ -21,6 +21,7 @@ from utility import (
     check_file_limit,
     increment_file_count,
     files_col,
+    auth_users_col,
     build_search_pipeline,
     queue_file_for_processing, 
     extract_channel_and_msg_id
